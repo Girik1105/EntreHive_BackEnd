@@ -405,7 +405,7 @@ class GroupMessageSerializer(serializers.ModelSerializer):
             'id', 'group_conversation', 'sender', 'content',
             'read_by', 'is_read_by_me', 'attachment', 'created_at', 'updated_at'
         ]
-        read_only_fields = ['id', 'sender', 'read_by', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'group_conversation', 'sender', 'read_by', 'created_at', 'updated_at']
 
     def get_sender(self, obj):
         """Get sender profile"""
@@ -474,8 +474,10 @@ class GroupConversationListSerializer(serializers.ModelSerializer):
             return {
                 'id': str(last_msg.id),
                 'content': last_msg.content[:100],  # Preview only
-                'sender_id': last_msg.sender.id,
-                'sender_username': last_msg.sender.username,
+                'sender': {
+                    'id': last_msg.sender.id,
+                    'username': last_msg.sender.username,
+                },
                 'created_at': last_msg.created_at,
             }
         return None
@@ -500,11 +502,12 @@ class GroupConversationDetailSerializer(serializers.ModelSerializer):
     project = ProjectSerializer(read_only=True)
     group_messages = GroupMessageSerializer(many=True, read_only=True)
     is_participant = serializers.SerializerMethodField()
+    participant_count = serializers.SerializerMethodField()
 
     class Meta:
         model = GroupConversation
         fields = [
-            'id', 'project', 'created_by', 'participants', 'group_messages',
+            'id', 'project', 'created_by', 'participants', 'participant_count', 'group_messages',
             'created_at', 'updated_at', 'last_message_at', 'is_participant'
         ]
         read_only_fields = ['id', 'created_at', 'updated_at', 'last_message_at']
@@ -529,6 +532,10 @@ class GroupConversationDetailSerializer(serializers.ModelSerializer):
         if request and request.user:
             return obj.is_participant(request.user)
         return False
+
+    def get_participant_count(self, obj):
+        """Get total participant count"""
+        return obj.participants.count()
 
 
 class CreateGroupConversationSerializer(serializers.Serializer):

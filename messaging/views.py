@@ -509,6 +509,26 @@ class GroupConversationDetailView(generics.RetrieveAPIView):
             'participants', 'participants__profile', 'group_messages'
         )
 
+    def retrieve(self, request, *args, **kwargs):
+        """Override to mark group messages as read"""
+        instance = self.get_object()
+
+        # Mark all group messages as read for current user
+        # Group messages use a many-to-many relationship for read_by
+        unread_messages = GroupMessage.objects.filter(
+            group_conversation=instance
+        ).exclude(
+            sender=request.user
+        ).exclude(
+            read_by=request.user
+        )
+
+        for message in unread_messages:
+            message.mark_as_read_by(request.user)
+
+        serializer = self.get_serializer(instance)
+        return Response(serializer.data)
+
 
 class CreateGroupConversationView(generics.CreateAPIView):
     """
@@ -587,29 +607,55 @@ class CreateGroupMessageView(generics.CreateAPIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def create(self, request, *args, **kwargs):
+        print(f"DEBUG: CreateGroupMessageView called")
+        print(f"DEBUG: Request data: {request.data}")
+        print(f"DEBUG: kwargs: {kwargs}")
+
         group_id = self.kwargs.get('group_id')
+        print(f"DEBUG: group_id from kwargs: {group_id}")
+
         group_conv = get_object_or_404(GroupConversation, id=group_id)
+        print(f"DEBUG: Found group conversation: {group_conv.id}")
 
         # Check user is participant
         if not group_conv.is_participant(request.user):
+            print(f"DEBUG: User {request.user.username} is NOT a participant")
             return Response(
                 {'detail': 'You are not a participant in this group conversation'},
                 status=status.HTTP_403_FORBIDDEN
             )
 
+        print(f"DEBUG: User {request.user.username} is a participant")
+
         serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
+        if not serializer.is_valid():
+            print(f"DEBUG: Serializer validation failed: {serializer.errors}")
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        print(f"DEBUG: Serializer is valid, creating message")
 
         # Create message
-        message = GroupMessage.objects.create(
-            group_conversation=group_conv,
-            sender=request.user,
-            content=serializer.validated_data['content'],
-            attachment=serializer.validated_data.get('attachment')
-        )
+        try:
+            message = GroupMessage.objects.create(
+                group_conversation=group_conv,
+                sender=request.user,
+                content=serializer.validated_data['content'],
+                attachment=serializer.validated_data.get('attachment')
+            )
+            print(f"DEBUG: Message created successfully: {message.id}")
 
-        # Mark as read by sender
-        message.read_by.add(request.user)
+            # Mark as read by sender
+            message.read_by.add(request.user)
+            print(f"DEBUG: Marked as read by sender")
 
-        output_serializer = GroupMessageSerializer(message, context={'request': request})
-        return Response(output_serializer.data, status=status.HTTP_201_CREATED)
+            output_serializer = GroupMessageSerializer(message, context={'request': request})
+            return Response(output_serializer.data, status=status.HTTP_201_CREATED)
+        except Exception as e:
+            print(f"DEBUG: Error creating message: {str(e)}")
+            print(f"DEBUG: Exception type: {type(e)}")
+            import traceback
+            print(f"DEBUG: Traceback: {traceback.format_exc()}")
+            return Response(
+                {'detail': f'Error creating message: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
