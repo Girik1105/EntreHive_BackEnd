@@ -21,5 +21,12 @@ urlpatterns = [
     
     # Stats
     path('stats/', views.inbox_stats, name='inbox-stats'),
+
+    # Group Conversations
+    path('group-conversations/', views.GroupConversationListView.as_view(), name='group-conversation-list'),
+    path('group-conversations/create/', views.CreateGroupConversationView.as_view(), name='group-conversation-create'),
+    path('group-conversations/<uuid:pk>/', views.GroupConversationDetailView.as_view(), name='group-conversation-detail'),
+    path('group-conversations/<uuid:group_id>/messages/', views.GroupMessageListView.as_view(), name='group-message-list'),
+    path('group-conversations/<uuid:group_id>/messages/create/', views.CreateGroupMessageView.as_view(), name='group-message-create'),
 ]
 

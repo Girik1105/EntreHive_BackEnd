@@ -1,14 +1,14 @@
 from rest_framework import serializers
 from django.contrib.auth.models import User
-from .models import Conversation, Message, ProjectViewRequest, MessagePermission
+from .models import Conversation, Message, ProjectViewRequest, MessagePermission, GroupConversation, GroupMessage
 from accounts.serializers import UserProfileSerializer
 from projects.serializers import ProjectSerializer
 
 
 class MessageSerializer(serializers.ModelSerializer):
     """Serializer for messages"""
-    
-    sender = UserProfileSerializer(read_only=True)
+
+    sender = serializers.SerializerMethodField()
     sender_id = serializers.IntegerField(write_only=True, required=False)
     
     class Meta:
@@ -19,19 +19,25 @@ class MessageSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['id', 'sender', 'read', 'read_at', 'created_at', 'updated_at']
     
+    def get_sender(self, obj):
+        """Get sender profile"""
+        if hasattr(obj.sender, 'profile'):
+            return UserProfileSerializer(obj.sender.profile, context=self.context).data
+        return None
+
     def validate(self, data):
         """Validate message sending permissions"""
         request = self.context.get('request')
         conversation_id = data.get('conversation')
-        
+
         if request and conversation_id:
             try:
                 conversation = Conversation.objects.get(id=conversation_id.id if hasattr(conversation_id, 'id') else conversation_id)
-                
+
                 # Check if user is participant
                 if not conversation.is_participant(request.user):
                     raise serializers.ValidationError("You are not a participant in this conversation")
-                
+
                 # Check messaging permissions
                 other_participant = conversation.get_other_participant(request.user)
                 if not MessagePermission.can_message(request.user, other_participant, conversation):
@@ -39,10 +45,10 @@ class MessageSerializer(serializers.ModelSerializer):
                         "You don't have permission to send messages in this conversation. "
                         "Students can only reply after receiving a message or having their project view request accepted."
                     )
-                
+
             except Conversation.DoesNotExist:
                 raise serializers.ValidationError("Conversation not found")
-        
+
         return data
     
     def create(self, validated_data):
@@ -54,9 +60,9 @@ class MessageSerializer(serializers.ModelSerializer):
 
 class ConversationListSerializer(serializers.ModelSerializer):
     """Serializer for listing conversations (inbox view)"""
-    
-    participant_1 = UserProfileSerializer(read_only=True)
-    participant_2 = UserProfileSerializer(read_only=True)
+
+    participant_1 = serializers.SerializerMethodField()
+    participant_2 = serializers.SerializerMethodField()
     other_participant = serializers.SerializerMethodField()
     last_message = serializers.SerializerMethodField()
     unread_count = serializers.SerializerMethodField()
@@ -70,15 +76,28 @@ class ConversationListSerializer(serializers.ModelSerializer):
             'updated_at', 'last_message_at', 'last_message', 'unread_count'
         ]
         read_only_fields = ['id', 'created_at', 'updated_at', 'last_message_at']
-    
+
+    def get_participant_1(self, obj):
+        """Get participant 1 profile"""
+        if hasattr(obj.participant_1, 'profile'):
+            return UserProfileSerializer(obj.participant_1.profile, context=self.context).data
+        return None
+
+    def get_participant_2(self, obj):
+        """Get participant 2 profile"""
+        if hasattr(obj.participant_2, 'profile'):
+            return UserProfileSerializer(obj.participant_2.profile, context=self.context).data
+        return None
+
     def get_other_participant(self, obj):
         """Get the other participant from current user's perspective"""
         request = self.context.get('request')
         if request and request.user:
             other = obj.get_other_participant(request.user)
-            return UserProfileSerializer(other).data
+            if hasattr(other, 'profile'):
+                return UserProfileSerializer(other.profile, context=self.context).data
         return None
-    
+
     def get_last_message(self, obj):
         """Get the last message in the conversation"""
         last_msg = obj.messages.order_by('-created_at').first()
@@ -102,9 +121,9 @@ class ConversationListSerializer(serializers.ModelSerializer):
 
 class ConversationDetailSerializer(serializers.ModelSerializer):
     """Serializer for detailed conversation view with messages"""
-    
-    participant_1 = UserProfileSerializer(read_only=True)
-    participant_2 = UserProfileSerializer(read_only=True)
+
+    participant_1 = serializers.SerializerMethodField()
+    participant_2 = serializers.SerializerMethodField()
     other_participant = serializers.SerializerMethodField()
     messages = MessageSerializer(many=True, read_only=True)
     related_project = ProjectSerializer(read_only=True)
@@ -118,15 +137,28 @@ class ConversationDetailSerializer(serializers.ModelSerializer):
             'created_at', 'updated_at', 'last_message_at', 'can_send_message'
         ]
         read_only_fields = ['id', 'created_at', 'updated_at', 'last_message_at']
-    
+
+    def get_participant_1(self, obj):
+        """Get participant 1 profile"""
+        if hasattr(obj.participant_1, 'profile'):
+            return UserProfileSerializer(obj.participant_1.profile, context=self.context).data
+        return None
+
+    def get_participant_2(self, obj):
+        """Get participant 2 profile"""
+        if hasattr(obj.participant_2, 'profile'):
+            return UserProfileSerializer(obj.participant_2.profile, context=self.context).data
+        return None
+
     def get_other_participant(self, obj):
         """Get the other participant from current user's perspective"""
         request = self.context.get('request')
         if request and request.user:
             other = obj.get_other_participant(request.user)
-            return UserProfileSerializer(other).data
+            if hasattr(other, 'profile'):
+                return UserProfileSerializer(other.profile, context=self.context).data
         return None
-    
+
     def get_can_send_message(self, obj):
         """Check if current user can send messages in this conversation"""
         request = self.context.get('request')
@@ -159,16 +191,51 @@ class CreateConversationSerializer(serializers.Serializer):
     
     def validate(self, data):
         """Validate messaging permissions"""
+        import logging
+        logger = logging.getLogger(__name__)
+
         request = self.context.get('request')
         recipient = User.objects.get(id=data['recipient_id'])
-        
-        # Check if user has permission to initiate conversation
-        if not MessagePermission.can_message(request.user, recipient):
-            raise serializers.ValidationError(
-                "You don't have permission to message this user. "
-                "Students must first send a project view request to professors/investors."
-            )
-        
+
+        # Check if both users have profiles
+        try:
+            from_profile = request.user.profile
+            to_profile = recipient.profile
+        except Exception as e:
+            logger.error(f"Profile error: {str(e)}")
+            raise serializers.ValidationError(f"Both users must have profiles: {str(e)}")
+
+        from_role = from_profile.user_role
+        to_role = to_profile.user_role
+
+        logger.info(f"Message permission check: {request.user.username} ({from_role}) -> {recipient.username} ({to_role})")
+
+        # Allow same roles to message each other
+        if from_role == to_role:
+            logger.info("Same role messaging - ALLOWED")
+            return data
+
+        # Allow professors/investors to message students
+        if from_role in ['professor', 'investor'] and to_role == 'student':
+            logger.info("Prof/Investor to student - ALLOWED")
+            return data
+
+        # For students messaging professors/investors, check if they have permission
+        if from_role == 'student' and to_role in ['professor', 'investor']:
+            # Check if there's an existing permission
+            has_permission = MessagePermission.objects.filter(
+                from_user=request.user,
+                to_user=recipient
+            ).exists()
+
+            if not has_permission:
+                logger.warning("Student to prof/investor without permission - DENIED")
+                raise serializers.ValidationError(
+                    "You don't have permission to message this user. "
+                    "Students must first send a project view request to professors/investors."
+                )
+            logger.info("Student to prof/investor with permission - ALLOWED")
+
         return data
     
     def create(self, validated_data):
@@ -212,9 +279,9 @@ class CreateConversationSerializer(serializers.Serializer):
 
 class ProjectViewRequestSerializer(serializers.ModelSerializer):
     """Serializer for project view requests"""
-    
-    requester = UserProfileSerializer(read_only=True)
-    recipient = UserProfileSerializer(read_only=True)
+
+    requester = serializers.SerializerMethodField()
+    recipient = serializers.SerializerMethodField()
     recipient_id = serializers.IntegerField(write_only=True, required=True)
     project = ProjectSerializer(read_only=True)
     project_id = serializers.UUIDField(write_only=True, required=True)
@@ -228,7 +295,19 @@ class ProjectViewRequestSerializer(serializers.ModelSerializer):
             'created_at', 'updated_at', 'responded_at'
         ]
         read_only_fields = ['id', 'requester', 'status', 'conversation', 'created_at', 'updated_at', 'responded_at']
-    
+
+    def get_requester(self, obj):
+        """Get requester profile"""
+        if hasattr(obj.requester, 'profile'):
+            return UserProfileSerializer(obj.requester.profile, context=self.context).data
+        return None
+
+    def get_recipient(self, obj):
+        """Get recipient profile"""
+        if hasattr(obj.recipient, 'profile'):
+            return UserProfileSerializer(obj.recipient.profile, context=self.context).data
+        return None
+
     def validate_recipient_id(self, value):
         """Validate recipient exists and has correct role"""
         try:
@@ -303,12 +382,247 @@ class ProjectViewRequestSerializer(serializers.ModelSerializer):
 
 class ProjectViewRequestResponseSerializer(serializers.Serializer):
     """Serializer for responding to project view requests"""
-    
+
     action = serializers.ChoiceField(choices=['accept', 'decline'], required=True)
-    
+
     def validate_action(self, value):
         """Validate action"""
         if value not in ['accept', 'decline']:
             raise serializers.ValidationError("Action must be 'accept' or 'decline'")
         return value
+
+
+class GroupMessageSerializer(serializers.ModelSerializer):
+    """Serializer for group messages"""
+
+    sender = serializers.SerializerMethodField()
+    read_by = serializers.SerializerMethodField()
+    is_read_by_me = serializers.SerializerMethodField()
+
+    class Meta:
+        model = GroupMessage
+        fields = [
+            'id', 'group_conversation', 'sender', 'content',
+            'read_by', 'is_read_by_me', 'attachment', 'created_at', 'updated_at'
+        ]
+        read_only_fields = ['id', 'group_conversation', 'sender', 'read_by', 'created_at', 'updated_at']
+
+    def get_sender(self, obj):
+        """Get sender profile"""
+        if hasattr(obj.sender, 'profile'):
+            return UserProfileSerializer(obj.sender.profile, context=self.context).data
+        return None
+
+    def get_read_by(self, obj):
+        """Get list of users who have read this message"""
+        users = obj.read_by.all()
+        return [
+            UserProfileSerializer(user.profile, context=self.context).data
+            for user in users if hasattr(user, 'profile')
+        ]
+
+    def get_is_read_by_me(self, obj):
+        """Check if current user has read this message"""
+        request = self.context.get('request')
+        if request and request.user:
+            return obj.read_by.filter(id=request.user.id).exists()
+        return False
+
+    def create(self, validated_data):
+        """Create group message with sender from request"""
+        request = self.context.get('request')
+        validated_data['sender'] = request.user
+        return super().create(validated_data)
+
+
+class GroupConversationListSerializer(serializers.ModelSerializer):
+    """Serializer for listing group conversations"""
+
+    participants = serializers.SerializerMethodField()
+    created_by = serializers.SerializerMethodField()
+    project = ProjectSerializer(read_only=True)
+    last_message = serializers.SerializerMethodField()
+    unread_count = serializers.SerializerMethodField()
+    participant_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = GroupConversation
+        fields = [
+            'id', 'project', 'created_by', 'participants', 'participant_count',
+            'created_at', 'updated_at', 'last_message_at', 'last_message', 'unread_count'
+        ]
+        read_only_fields = ['id', 'created_at', 'updated_at', 'last_message_at']
+
+    def get_participants(self, obj):
+        """Get list of participants"""
+        users = obj.participants.all()
+        return [
+            UserProfileSerializer(user.profile, context=self.context).data
+            for user in users if hasattr(user, 'profile')
+        ]
+
+    def get_created_by(self, obj):
+        """Get creator profile"""
+        if hasattr(obj.created_by, 'profile'):
+            return UserProfileSerializer(obj.created_by.profile, context=self.context).data
+        return None
+
+    def get_last_message(self, obj):
+        """Get the last message in the group conversation"""
+        last_msg = obj.group_messages.order_by('-created_at').first()
+        if last_msg:
+            return {
+                'id': str(last_msg.id),
+                'content': last_msg.content[:100],  # Preview only
+                'sender': {
+                    'id': last_msg.sender.id,
+                    'username': last_msg.sender.username,
+                },
+                'created_at': last_msg.created_at,
+            }
+        return None
+
+    def get_unread_count(self, obj):
+        """Get unread message count for current user"""
+        request = self.context.get('request')
+        if request and request.user:
+            return obj.get_unread_count(request.user)
+        return 0
+
+    def get_participant_count(self, obj):
+        """Get total participant count"""
+        return obj.participants.count()
+
+
+class GroupConversationDetailSerializer(serializers.ModelSerializer):
+    """Serializer for detailed group conversation view with messages"""
+
+    participants = serializers.SerializerMethodField()
+    created_by = serializers.SerializerMethodField()
+    project = ProjectSerializer(read_only=True)
+    group_messages = GroupMessageSerializer(many=True, read_only=True)
+    is_participant = serializers.SerializerMethodField()
+    participant_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = GroupConversation
+        fields = [
+            'id', 'project', 'created_by', 'participants', 'participant_count', 'group_messages',
+            'created_at', 'updated_at', 'last_message_at', 'is_participant'
+        ]
+        read_only_fields = ['id', 'created_at', 'updated_at', 'last_message_at']
+
+    def get_participants(self, obj):
+        """Get list of participants"""
+        users = obj.participants.all()
+        return [
+            UserProfileSerializer(user.profile, context=self.context).data
+            for user in users if hasattr(user, 'profile')
+        ]
+
+    def get_created_by(self, obj):
+        """Get creator profile"""
+        if hasattr(obj.created_by, 'profile'):
+            return UserProfileSerializer(obj.created_by.profile, context=self.context).data
+        return None
+
+    def get_is_participant(self, obj):
+        """Check if current user is a participant"""
+        request = self.context.get('request')
+        if request and request.user:
+            return obj.is_participant(request.user)
+        return False
+
+    def get_participant_count(self, obj):
+        """Get total participant count"""
+        return obj.participants.count()
+
+
+class CreateGroupConversationSerializer(serializers.Serializer):
+    """Serializer for creating a group conversation for a project team"""
+
+    project_id = serializers.UUIDField(required=True)
+    initial_message = serializers.CharField(max_length=5000, required=True)
+
+    def validate_project_id(self, value):
+        """Validate project exists"""
+        from projects.models import Project
+        try:
+            project = Project.objects.get(id=value)
+        except Project.DoesNotExist:
+            raise serializers.ValidationError("Project not found")
+        return value
+
+    def validate(self, data):
+        """Validate user can create group conversation"""
+        from projects.models import Project
+        request = self.context.get('request')
+        project = Project.objects.get(id=data['project_id'])
+
+        # Check if user has permission (professor/investor)
+        if not hasattr(request.user, 'profile'):
+            raise serializers.ValidationError("User must have a profile")
+
+        if request.user.profile.user_role not in ['professor', 'investor']:
+            raise serializers.ValidationError("Only professors and investors can create group conversations")
+
+        # Check if group conversation already exists for this project by this user
+        existing_group = GroupConversation.objects.filter(
+            project=project,
+            created_by=request.user
+        ).first()
+
+        if existing_group:
+            raise serializers.ValidationError({
+                "existing_conversation_id": str(existing_group.id),
+                "message": "You already have a group conversation for this project"
+            })
+
+        return data
+
+    def create(self, validated_data):
+        """Create group conversation with project team members"""
+        from projects.models import Project
+        from django.db import transaction
+
+        request = self.context.get('request')
+        project = Project.objects.get(id=validated_data['project_id'])
+
+        with transaction.atomic():
+            # Create group conversation
+            group_conv = GroupConversation.objects.create(
+                project=project,
+                created_by=request.user
+            )
+
+            # Add all team members as participants (owner + team members)
+            all_members = list(project.all_team_members)
+
+            print(f"DEBUG: Adding {len(all_members)} team members to group conversation")
+            print(f"DEBUG: Team members: {[m.username for m in all_members]}")
+
+            # Add creator (investor/professor)
+            group_conv.participants.add(request.user)
+
+            # Add all team members
+            group_conv.participants.add(*all_members)
+
+            # Verify participants were added
+            participant_count = group_conv.participants.count()
+            print(f"DEBUG: Group conversation now has {participant_count} participants")
+
+            # Create initial message (without triggering read_by in save)
+            message = GroupMessage(
+                group_conversation=group_conv,
+                sender=request.user,
+                content=validated_data['initial_message']
+            )
+            message.save()
+
+            # Now add sender to read_by after the message is saved
+            message.read_by.add(request.user)
+
+            print(f"DEBUG: Created initial message with ID: {message.id}")
+
+        return group_conv
 

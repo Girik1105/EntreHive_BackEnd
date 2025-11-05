@@ -92,11 +92,11 @@ class Conversation(models.Model):
     
     def get_unread_count(self, user):
         """Get unread message count for a user"""
-        return self.messages.filter(sender__ne=user, read=False).count()
-    
+        return self.messages.exclude(sender=user).filter(read=False).count()
+
     def mark_as_read(self, user):
         """Mark all messages as read for a user"""
-        self.messages.filter(sender__ne=user, read=False).update(read=True)
+        self.messages.exclude(sender=user).filter(read=False).update(read=True)
 
 
 class Message(models.Model):
@@ -368,39 +368,44 @@ class MessagePermission(models.Model):
         """
         Check if from_user can send message to to_user
         Rules:
-        1. Professors and investors can always message students
-        2. Students can message back if:
+        1. Same roles can message each other freely (student-to-student, professor-to-professor, investor-to-investor)
+        2. Professors and investors can always message students
+        3. Students can message professors/investors if they have permission:
            - They've received a message in the conversation
            - Their project view request was accepted
         """
         if not hasattr(from_user, 'profile') or not hasattr(to_user, 'profile'):
             return False
-        
+
         from_role = from_user.profile.user_role
         to_role = to_user.profile.user_role
-        
-        # Professors and investors can message students
+
+        # Rule 1: Same roles can message each other freely
+        if from_role == to_role:
+            return True
+
+        # Rule 2: Professors and investors can message students
         if from_role in ['professor', 'investor'] and to_role == 'student':
             return True
-        
-        # Students can message professors/investors if they have permission
+
+        # Rule 3: Students can message professors/investors if they have permission
         if from_role == 'student' and to_role in ['professor', 'investor']:
             # Check if there's an existing permission
             has_permission = MessagePermission.objects.filter(
                 from_user=from_user,
                 to_user=to_user
             ).exists()
-            
+
             if has_permission:
                 return True
-            
+
             # Check if student received any messages from this professor/investor
             if conversation:
                 received_message = Message.objects.filter(
                     conversation=conversation,
                     sender=to_user
                 ).exists()
-                
+
                 if received_message:
                     # Grant permission for future
                     MessagePermission.objects.get_or_create(
@@ -410,13 +415,10 @@ class MessagePermission(models.Model):
                         defaults={'grant_type': 'replied'}
                     )
                     return True
-            
+
             return False
-        
-        # Same roles can message each other freely
-        if from_role == to_role:
-            return True
-        
+
+        # Default: deny
         return False
     
     @staticmethod
@@ -429,3 +431,119 @@ class MessagePermission(models.Model):
             defaults={'grant_type': grant_type}
         )
         return permission
+
+
+class GroupConversation(models.Model):
+    """
+    Group conversation for team messaging
+    Allows professors/investors to contact entire project teams
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    # Related project (required for group conversations)
+    project = models.ForeignKey(
+        'projects.Project',
+        on_delete=models.CASCADE,
+        related_name='group_conversations'
+    )
+
+    # Creator of the group conversation
+    created_by = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='created_group_conversations'
+    )
+
+    # Participants (project team members + creator)
+    participants = models.ManyToManyField(
+        User,
+        related_name='group_conversations',
+        help_text="All participants in the group conversation"
+    )
+
+    # Timestamps
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    last_message_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        verbose_name = "Group Conversation"
+        verbose_name_plural = "Group Conversations"
+        ordering = ['-last_message_at', '-created_at']
+
+    def __str__(self):
+        return f"Group: {self.project.title} ({self.participants.count()} members)"
+
+    def is_participant(self, user):
+        """Check if user is a participant"""
+        return self.participants.filter(id=user.id).exists()
+
+    def get_unread_count(self, user):
+        """Get unread message count for a user"""
+        return self.group_messages.exclude(sender=user).exclude(
+            read_by=user
+        ).count()
+
+
+class GroupMessage(models.Model):
+    """
+    Message in a group conversation
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    group_conversation = models.ForeignKey(
+        GroupConversation,
+        on_delete=models.CASCADE,
+        related_name='group_messages'
+    )
+
+    sender = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='sent_group_messages'
+    )
+
+    content = models.TextField(max_length=5000, help_text="Message content")
+
+    # Track who has read the message (ManyToMany)
+    read_by = models.ManyToManyField(
+        User,
+        related_name='read_group_messages',
+        blank=True
+    )
+
+    # Optional: attach files/images
+    attachment = models.FileField(
+        upload_to='group_message_attachments/',
+        null=True,
+        blank=True,
+        help_text="Optional file attachment"
+    )
+
+    # Timestamps
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Group Message"
+        verbose_name_plural = "Group Messages"
+        ordering = ['created_at']
+
+    def __str__(self):
+        return f"Group Message from {self.sender.username} at {self.created_at}"
+
+    def save(self, *args, **kwargs):
+        # Update group conversation's last_message_at
+        is_new = self.pk is None
+        super().save(*args, **kwargs)
+
+        if is_new:
+            self.group_conversation.last_message_at = self.created_at
+            self.group_conversation.save(update_fields=['last_message_at', 'updated_at'])
+
+    def mark_as_read_by(self, user):
+        """Mark message as read by a specific user"""
+        if user not in self.read_by.all():
+            self.read_by.add(user)

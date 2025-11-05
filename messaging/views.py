@@ -1,14 +1,16 @@
-from rest_framework import generics, status, permissions
+from rest_framework import generics, status, permissions, serializers
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from django.db.models import Q, Max
 from django.shortcuts import get_object_or_404
 from django.contrib.auth.models import User
-from .models import Conversation, Message, ProjectViewRequest, MessagePermission
+from .models import Conversation, Message, ProjectViewRequest, MessagePermission, GroupConversation, GroupMessage
 from .serializers import (
     ConversationListSerializer, ConversationDetailSerializer,
     MessageSerializer, ProjectViewRequestSerializer,
-    CreateConversationSerializer, ProjectViewRequestResponseSerializer
+    CreateConversationSerializer, ProjectViewRequestResponseSerializer,
+    GroupConversationListSerializer, GroupConversationDetailSerializer,
+    GroupMessageSerializer, CreateGroupConversationSerializer
 )
 
 
@@ -466,3 +468,194 @@ def inbox_stats(request):
         'pending_requests': pending_requests,
         'active_conversations': active_conversations,
     })
+
+
+# ==================== GROUP CONVERSATION VIEWS ====================
+
+class GroupConversationListView(generics.ListAPIView):
+    """
+    List all group conversations for the current user
+    GET /api/messaging/group-conversations/
+    """
+    serializer_class = GroupConversationListSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        return GroupConversation.objects.filter(
+            participants=user
+        ).select_related(
+            'project', 'project__owner', 'created_by', 'created_by__profile'
+        ).prefetch_related(
+            'participants', 'participants__profile', 'group_messages'
+        ).order_by('-last_message_at', '-created_at')
+
+
+class GroupConversationDetailView(generics.RetrieveAPIView):
+    """
+    Get details of a specific group conversation
+    GET /api/messaging/group-conversations/<id>/
+    """
+    serializer_class = GroupConversationDetailSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        return GroupConversation.objects.filter(
+            participants=user
+        ).select_related(
+            'project', 'project__owner', 'created_by', 'created_by__profile'
+        ).prefetch_related(
+            'participants', 'participants__profile', 'group_messages'
+        )
+
+    def retrieve(self, request, *args, **kwargs):
+        """Override to mark group messages as read"""
+        instance = self.get_object()
+
+        # Mark all group messages as read for current user
+        # Group messages use a many-to-many relationship for read_by
+        unread_messages = GroupMessage.objects.filter(
+            group_conversation=instance
+        ).exclude(
+            sender=request.user
+        ).exclude(
+            read_by=request.user
+        )
+
+        for message in unread_messages:
+            message.mark_as_read_by(request.user)
+
+        serializer = self.get_serializer(instance)
+        return Response(serializer.data)
+
+
+class CreateGroupConversationView(generics.CreateAPIView):
+    """
+    Create a new group conversation with a project team
+    POST /api/messaging/group-conversations/
+    Body: {
+        "project_id": "uuid",
+        "initial_message": "message text"
+    }
+    """
+    serializer_class = CreateGroupConversationSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+
+        try:
+            serializer.is_valid(raise_exception=True)
+            group_conversation = serializer.save()
+
+            # Return the created group conversation
+            output_serializer = GroupConversationDetailSerializer(
+                group_conversation,
+                context={'request': request}
+            )
+            return Response(output_serializer.data, status=status.HTTP_201_CREATED)
+
+        except serializers.ValidationError as e:
+            # Check if it's an existing conversation error
+            if hasattr(e, 'detail') and isinstance(e.detail, dict):
+                if 'existing_conversation_id' in str(e.detail):
+                    # Extract the existing conversation ID
+                    existing_id = e.detail.get('non_field_errors', [{}])[0].get('existing_conversation_id')
+                    return Response({
+                        'existing_conversation_id': existing_id,
+                        'message': 'You already have a group conversation for this project'
+                    }, status=status.HTTP_200_OK)
+            raise
+
+
+class GroupMessageListView(generics.ListAPIView):
+    """
+    List messages in a group conversation
+    GET /api/messaging/group-conversations/<group_id>/messages/
+    """
+    serializer_class = GroupMessageSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        group_id = self.kwargs.get('group_id')
+
+        # Get group conversation and check user is participant
+        group_conv = get_object_or_404(GroupConversation, id=group_id)
+        if not group_conv.is_participant(user):
+            return GroupMessage.objects.none()
+
+        return GroupMessage.objects.filter(
+            group_conversation=group_conv
+        ).select_related(
+            'sender', 'sender__profile'
+        ).prefetch_related(
+            'read_by'
+        ).order_by('created_at')
+
+
+class CreateGroupMessageView(generics.CreateAPIView):
+    """
+    Send a message in a group conversation
+    POST /api/messaging/group-conversations/<group_id>/messages/
+    Body: {
+        "content": "message text"
+    }
+    """
+    serializer_class = GroupMessageSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def create(self, request, *args, **kwargs):
+        print(f"DEBUG: CreateGroupMessageView called")
+        print(f"DEBUG: Request data: {request.data}")
+        print(f"DEBUG: kwargs: {kwargs}")
+
+        group_id = self.kwargs.get('group_id')
+        print(f"DEBUG: group_id from kwargs: {group_id}")
+
+        group_conv = get_object_or_404(GroupConversation, id=group_id)
+        print(f"DEBUG: Found group conversation: {group_conv.id}")
+
+        # Check user is participant
+        if not group_conv.is_participant(request.user):
+            print(f"DEBUG: User {request.user.username} is NOT a participant")
+            return Response(
+                {'detail': 'You are not a participant in this group conversation'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        print(f"DEBUG: User {request.user.username} is a participant")
+
+        serializer = self.get_serializer(data=request.data)
+        if not serializer.is_valid():
+            print(f"DEBUG: Serializer validation failed: {serializer.errors}")
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        print(f"DEBUG: Serializer is valid, creating message")
+
+        # Create message
+        try:
+            message = GroupMessage.objects.create(
+                group_conversation=group_conv,
+                sender=request.user,
+                content=serializer.validated_data['content'],
+                attachment=serializer.validated_data.get('attachment')
+            )
+            print(f"DEBUG: Message created successfully: {message.id}")
+
+            # Mark as read by sender
+            message.read_by.add(request.user)
+            print(f"DEBUG: Marked as read by sender")
+
+            output_serializer = GroupMessageSerializer(message, context={'request': request})
+            return Response(output_serializer.data, status=status.HTTP_201_CREATED)
+        except Exception as e:
+            print(f"DEBUG: Error creating message: {str(e)}")
+            print(f"DEBUG: Exception type: {type(e)}")
+            import traceback
+            print(f"DEBUG: Traceback: {traceback.format_exc()}")
+            return Response(
+                {'detail': f'Error creating message: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
