@@ -239,24 +239,31 @@ class CommentViewSet(viewsets.ModelViewSet):
             return CommentCreateSerializer
         return CommentSerializer
     
-    def perform_create(self, serializer):
+    def create(self, request, *args, **kwargs):
         """
-        Create a comment on a post
+        Override create to return the full comment with author data
         """
         post_id = self.kwargs.get('post_pk')
         post = get_object_or_404(Post, id=post_id)
-        
+
         # Check if user can view the post
-        if not post.can_view(self.request.user):
+        if not post.can_view(request.user):
             return Response(
                 {'error': 'You do not have permission to comment on this post'},
                 status=status.HTTP_403_FORBIDDEN
             )
-        
-        serializer.save(
-            author=self.request.user,
+
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        comment = serializer.save(
+            author=request.user,
             post=post
         )
+
+        # Return the comment using the full CommentSerializer with author data
+        output_serializer = CommentSerializer(comment, context={'request': request})
+        headers = self.get_success_headers(output_serializer.data)
+        return Response(output_serializer.data, status=status.HTTP_201_CREATED, headers=headers)
     
     def get_serializer_context(self):
         """
@@ -268,22 +275,30 @@ class CommentViewSet(viewsets.ModelViewSet):
             context['post_id'] = post_id
         return context
     
-    def perform_update(self, serializer):
+    def update(self, request, *args, **kwargs):
         """
-        Only allow authors to update their own comments
+        Override update to return the full comment with author data
         """
         comment = self.get_object()
-        if comment.author != self.request.user:
+        if comment.author != request.user:
             return Response(
                 {'error': 'You can only edit your own comments'},
                 status=status.HTTP_403_FORBIDDEN
             )
-        
+
+        partial = kwargs.pop('partial', False)
+        serializer = self.get_serializer(comment, data=request.data, partial=partial)
+        serializer.is_valid(raise_exception=True)
+
         # Mark as edited if content changed
         if 'content' in serializer.validated_data and serializer.validated_data['content'] != comment.content:
-            serializer.save(is_edited=True)
+            updated_comment = serializer.save(is_edited=True)
         else:
-            serializer.save()
+            updated_comment = serializer.save()
+
+        # Return the comment using the full CommentSerializer with author data
+        output_serializer = CommentSerializer(updated_comment, context={'request': request})
+        return Response(output_serializer.data)
     
     def perform_destroy(self, instance):
         """
