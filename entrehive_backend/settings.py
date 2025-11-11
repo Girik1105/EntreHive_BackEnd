@@ -314,6 +314,15 @@ EMAIL_USE_TLS = os.environ.get('EMAIL_USE_TLS')
 EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER')
 EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD')
 DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL', 'noreply@entrehive.com')
+print(f"EMAIL_HOST: {EMAIL_HOST}")
+print(f"EMAIL_PORT: {EMAIL_PORT}")
+print(f"EMAIL_USE_TLS: {EMAIL_USE_TLS}")
+print(f"EMAIL_HOST_USER: {EMAIL_HOST_USER}")
+# Do not print sensitive information like EMAIL_HOST_PASSWORD in logs.
+# If you must log something, mask the password for security:
+masked_password = EMAIL_HOST_PASSWORD[:2] + '***' if EMAIL_HOST_PASSWORD else 'None'
+print(f"EMAIL_HOST_PASSWORD: {masked_password}")
+print(f"DEFAULT_FROM_EMAIL: {DEFAULT_FROM_EMAIL}")
 
 
 # Security Settings for Production
