@@ -12,6 +12,7 @@ from .serializers import (
     GroupConversationListSerializer, GroupConversationDetailSerializer,
     GroupMessageSerializer, CreateGroupConversationSerializer
 )
+from notifications.models import Notification
 
 
 class ConversationListView(generics.ListAPIView):
@@ -237,7 +238,20 @@ class MessageListCreateView(generics.ListCreateAPIView):
         serializer = self.get_serializer(data=data)
         serializer.is_valid(raise_exception=True)
         message = serializer.save()
-        
+
+        # Create notification for the recipient
+        recipient = conversation.get_other_participant(request.user)
+        if recipient:
+            try:
+                Notification.create_message_notification(
+                    sender=request.user,
+                    recipient=recipient,
+                    message=message,
+                    conversation=conversation
+                )
+            except Exception as e:
+                print(f"Error creating message notification: {e}")
+
         return Response(
             MessageSerializer(message, context={'request': request}).data,
             status=status.HTTP_201_CREATED
@@ -647,6 +661,18 @@ class CreateGroupMessageView(generics.CreateAPIView):
             # Mark as read by sender
             message.read_by.add(request.user)
             print(f"DEBUG: Marked as read by sender")
+
+            # Create notifications for all other participants
+            for participant in group_conv.participants.exclude(id=request.user.id):
+                try:
+                    Notification.create_group_message_notification(
+                        sender=request.user,
+                        recipient=participant,
+                        message=message,
+                        group_conversation=group_conv
+                    )
+                except Exception as e:
+                    print(f"Error creating group message notification for {participant.username}: {e}")
 
             output_serializer = GroupMessageSerializer(message, context={'request': request})
             return Response(output_serializer.data, status=status.HTTP_201_CREATED)

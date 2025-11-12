@@ -7,9 +7,10 @@ from django.shortcuts import get_object_or_404
 import re
 from .models import Post, Comment, Like, PostShare
 from .serializers import (
-    PostSerializer, PostListSerializer, CommentSerializer, 
+    PostSerializer, PostListSerializer, CommentSerializer,
     CommentCreateSerializer, LikeSerializer
 )
+from notifications.models import Notification
 
 
 class PostViewSet(viewsets.ModelViewSet):
@@ -64,7 +65,25 @@ class PostViewSet(viewsets.ModelViewSet):
         """
         Set the author to the current user when creating a post
         """
-        serializer.save(author=self.request.user)
+        post = serializer.save(author=self.request.user)
+
+        # Check for mentions in post content
+        mentions = re.findall(r'@(\w+)', post.content)
+        for username in mentions:
+            try:
+                from django.contrib.auth import get_user_model
+                User = get_user_model()
+                mentioned_user = User.objects.get(username=username)
+                if mentioned_user != self.request.user:
+                    Notification.create_mention_notification(
+                        mentioner=self.request.user,
+                        mentioned_user=mentioned_user,
+                        post=post
+                    )
+            except User.DoesNotExist:
+                pass
+            except Exception as e:
+                print(f"Error creating mention notification in post: {e}")
     
     def perform_update(self, serializer):
         """
@@ -105,8 +124,18 @@ class PostViewSet(viewsets.ModelViewSet):
             )
         
         like, created = Like.objects.get_or_create(post=post, user=user)
-        
+
         if created:
+            # Create notification for post author (don't notify if user likes their own post)
+            if post.author != user:
+                try:
+                    Notification.create_like_notification(
+                        liker=user,
+                        post=post
+                    )
+                except Exception as e:
+                    print(f"Error creating like notification: {e}")
+
             return Response(
                 {'message': 'Post liked', 'liked': True, 'likes_count': post.get_likes_count()},
                 status=status.HTTP_201_CREATED
@@ -259,6 +288,51 @@ class CommentViewSet(viewsets.ModelViewSet):
             author=request.user,
             post=post
         )
+
+        # Create notification for post author or parent comment author
+        if comment.parent:
+            # Reply to a comment - notify the comment author
+            if comment.parent.author != request.user:
+                try:
+                    Notification.create_comment_notification(
+                        commenter=request.user,
+                        post=post,
+                        comment=comment,
+                        is_reply=True
+                    )
+                except Exception as e:
+                    print(f"Error creating comment reply notification: {e}")
+        else:
+            # Comment on a post - notify the post author
+            if post.author != request.user:
+                try:
+                    Notification.create_comment_notification(
+                        commenter=request.user,
+                        post=post,
+                        comment=comment,
+                        is_reply=False
+                    )
+                except Exception as e:
+                    print(f"Error creating comment notification: {e}")
+
+        # Check for mentions in comment content
+        mentions = re.findall(r'@(\w+)', comment.content)
+        for username in mentions:
+            try:
+                from django.contrib.auth import get_user_model
+                User = get_user_model()
+                mentioned_user = User.objects.get(username=username)
+                if mentioned_user != request.user:
+                    Notification.create_mention_notification(
+                        mentioner=request.user,
+                        mentioned_user=mentioned_user,
+                        post=post,
+                        comment=comment
+                    )
+            except User.DoesNotExist:
+                pass
+            except Exception as e:
+                print(f"Error creating mention notification: {e}")
 
         # Return the comment using the full CommentSerializer with author data
         output_serializer = CommentSerializer(comment, context={'request': request})

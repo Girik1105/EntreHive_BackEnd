@@ -1,10 +1,18 @@
-from rest_framework import viewsets, status
+from rest_framework import viewsets, status, generics
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.pagination import PageNumberPagination
 from django.db.models import Q
-from .models import Notification
-from .serializers import NotificationSerializer, NotificationListSerializer
+from .models import Notification, NotificationPreference
+from .serializers import NotificationSerializer, NotificationListSerializer, NotificationPreferenceSerializer
+
+
+class NotificationPagination(PageNumberPagination):
+    """Pagination class for notifications"""
+    page_size = 20
+    page_size_query_param = 'page_size'
+    max_page_size = 100
 
 
 class NotificationViewSet(viewsets.ModelViewSet):
@@ -13,6 +21,7 @@ class NotificationViewSet(viewsets.ModelViewSet):
     """
     permission_classes = [IsAuthenticated]
     serializer_class = NotificationSerializer
+    pagination_class = NotificationPagination
     
     def get_queryset(self):
         """Return notifications for the current user"""
@@ -29,29 +38,59 @@ class NotificationViewSet(viewsets.ModelViewSet):
     def list(self, request, *args, **kwargs):
         """Get all notifications for current user"""
         queryset = self.get_queryset()
-        
+
         # Filter by read status if specified
         is_read = request.query_params.get('is_read', None)
         if is_read is not None:
             queryset = queryset.filter(is_read=is_read.lower() == 'true')
-        
-        # Limit results
+
+        # Check if using simple limit (for RightSidebar) or pagination
         limit = request.query_params.get('limit', None)
-        if limit:
+        if limit and not request.query_params.get('page'):
+            # Simple limit for RightSidebar - no pagination
             queryset = queryset[:int(limit)]
-        
+            serializer = self.get_serializer(queryset, many=True)
+
+            # Get unread count
+            unread_count = Notification.objects.filter(
+                recipient=request.user,
+                is_read=False
+            ).count()
+
+            return Response({
+                'notifications': serializer.data,
+                'unread_count': unread_count,
+                'total_count': self.get_queryset().count()
+            })
+
+        # Use pagination for full notification list
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+
+            # Get unread count
+            unread_count = Notification.objects.filter(
+                recipient=request.user,
+                is_read=False
+            ).count()
+
+            # Get paginated response and add extra data
+            response = self.get_paginated_response(serializer.data)
+            response.data['unread_count'] = unread_count
+            response.data['total_count'] = queryset.count()
+            return response
+
+        # Fallback (should not reach here)
         serializer = self.get_serializer(queryset, many=True)
-        
-        # Get unread count
         unread_count = Notification.objects.filter(
             recipient=request.user,
             is_read=False
         ).count()
-        
+
         return Response({
             'notifications': serializer.data,
             'unread_count': unread_count,
-            'total_count': self.get_queryset().count()
+            'total_count': queryset.count()
         })
     
     @action(detail=True, methods=['post'])
@@ -87,6 +126,50 @@ class NotificationViewSet(viewsets.ModelViewSet):
             is_read=False
         ).count()
         return Response({'unread_count': count})
+
+    def destroy(self, request, *args, **kwargs):
+        """Delete a specific notification"""
+        notification = self.get_object()
+        if notification.recipient != request.user:
+            return Response(
+                {'error': 'You can only delete your own notifications'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        notification.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+    @action(detail=False, methods=['post'])
+    def bulk_action(self, request):
+        """Perform bulk actions on notifications"""
+        action_type = request.data.get('action')
+        notification_ids = request.data.get('notification_ids', [])
+
+        if not action_type or not notification_ids:
+            return Response(
+                {'error': 'action and notification_ids are required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Get notifications for current user only
+        notifications = Notification.objects.filter(
+            id__in=notification_ids,
+            recipient=request.user
+        )
+
+        if action_type == 'mark_read':
+            count = notifications.update(is_read=True)
+            return Response({'status': f'{count} notifications marked as read'})
+        elif action_type == 'mark_unread':
+            count = notifications.update(is_read=False)
+            return Response({'status': f'{count} notifications marked as unread'})
+        elif action_type == 'delete':
+            count, _ = notifications.delete()
+            return Response({'status': f'{count} notifications deleted'})
+        else:
+            return Response(
+                {'error': 'Invalid action. Use mark_read, mark_unread, or delete'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
 
 @api_view(['GET'])
@@ -140,3 +223,18 @@ def get_follow_suggestions(request):
         'suggestions': serializer.data,
         'count': len(serializer.data)
     })
+
+
+class NotificationPreferenceView(generics.RetrieveUpdateAPIView):
+    """
+    Get and update notification preferences for the current user
+    """
+    serializer_class = NotificationPreferenceSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_object(self):
+        """Get or create notification preferences for current user"""
+        obj, created = NotificationPreference.objects.get_or_create(
+            user=self.request.user
+        )
+        return obj

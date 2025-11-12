@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Notification
+from .models import Notification, NotificationPreference
 
 
 class SimpleUserSerializer(serializers.Serializer):
@@ -41,19 +41,35 @@ class NotificationListSerializer(serializers.ModelSerializer):
     sender_username = serializers.CharField(source='sender.username', read_only=True)
     sender_full_name = serializers.CharField(source='sender.get_full_name', read_only=True)
     sender_profile_picture = serializers.SerializerMethodField()
-    
+
     class Meta:
         model = Notification
         fields = [
-            'id', 'notification_type', 'title', 'message', 
+            'id', 'notification_type', 'title', 'message',
             'sender_username', 'sender_full_name', 'sender_profile_picture',
-            'action_url', 'is_read', 'created_at'
+            'action_url', 'is_read', 'created_at',
+            'notification_group_id', 'is_grouped', 'group_count',
+            'image_url', 'thumbnail_url'
         ]
-    
+
     def get_sender_profile_picture(self, obj):
         if obj.sender and hasattr(obj.sender, 'profile') and obj.sender.profile.profile_picture:
             request = self.context.get('request')
             if request:
                 return request.build_absolute_uri(obj.sender.profile.profile_picture.url)
         return None
+
+
+class NotificationPreferenceSerializer(serializers.ModelSerializer):
+    """Serializer for in-app notification preferences"""
+    class Meta:
+        model = NotificationPreference
+        fields = [
+            'id', 'user',
+            'follow_enabled', 'like_enabled', 'comment_enabled',
+            'mention_enabled', 'message_enabled', 'project_invite_enabled',
+            'project_join_enabled',
+            'created_at', 'updated_at'
+        ]
+        read_only_fields = ['id', 'user', 'created_at', 'updated_at']
 
