@@ -416,28 +416,41 @@ def follow_status(request, username):
 def user_search(request):
     """
     Search for users by username, name, or bio
+    Optional role filtering via ?role=professor,investor
     """
     search_query = request.GET.get('q', '').strip()
-    
+
     if not search_query:
         return Response(
-            {'results': [], 'message': 'Please provide a search query'}, 
+            {'results': [], 'message': 'Please provide a search query'},
             status=status.HTTP_200_OK
         )
-    
-    # Search only public profiles
+
+    # Build base query - search only public profiles with valid users
     profiles = UserProfile.objects.filter(
-        is_profile_public=True
+        is_profile_public=True,
+        user__isnull=False,  # Ensure user exists
+        user__is_active=True  # Only active users
     ).filter(
         Q(user__username__icontains=search_query) |
         Q(first_name__icontains=search_query) |
         Q(last_name__icontains=search_query) |
         Q(bio__icontains=search_query)
-    ).order_by('-created_at')[:20]  # Limit to 20 results
-    
+    ).select_related('user')  # Optimize query
+
+    # Filter by role if specified
+    role_filter = request.GET.get('role', '').strip()
+    if role_filter:
+        allowed_roles = [r.strip() for r in role_filter.split(',') if r.strip()]
+        if allowed_roles:
+            profiles = profiles.filter(user_role__in=allowed_roles)
+
+    # Limit results and order
+    profiles = profiles.order_by('-created_at')[:20]
+
     serializer = PublicUserProfileSerializer(profiles, many=True, context={'request': request})
     return Response(
-        {'results': serializer.data, 'count': len(serializer.data)}, 
+        {'results': serializer.data, 'count': len(serializer.data)},
         status=status.HTTP_200_OK
     )
 

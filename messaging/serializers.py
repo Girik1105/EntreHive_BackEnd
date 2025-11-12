@@ -314,54 +314,60 @@ class ProjectViewRequestSerializer(serializers.ModelSerializer):
             recipient = User.objects.get(id=value)
         except User.DoesNotExist:
             raise serializers.ValidationError("Recipient not found")
-        
+
         if not hasattr(recipient, 'profile'):
             raise serializers.ValidationError("Recipient must have a profile")
-        
+
         if recipient.profile.user_role not in ['professor', 'investor']:
-            raise serializers.ValidationError("Can only send project view requests to professors or investors")
-        
+            raise serializers.ValidationError(
+                f"Can only send project view requests to professors or investors. "
+                f"Selected user '{recipient.username}' is a {recipient.profile.user_role}."
+            )
+
         return value
     
     def validate_project_id(self, value):
         """Validate project exists and user is a member"""
         from projects.models import Project
         request = self.context.get('request')
-        
+
         try:
             project = Project.objects.get(id=value)
         except Project.DoesNotExist:
             raise serializers.ValidationError("Project not found")
-        
+
         if not project.is_team_member(request.user):
             raise serializers.ValidationError("You must be a member of the project to send view requests")
-        
+
         return value
     
     def validate(self, data):
-        """Validate requester is a student"""
+        """Validate project view request"""
         request = self.context.get('request')
-        
+
         if not hasattr(request.user, 'profile'):
             raise serializers.ValidationError("User must have a profile")
-        
-        if request.user.profile.user_role != 'student':
-            raise serializers.ValidationError("Only students can send project view requests")
-        
+
+        # Allow students and professors to send project view requests
+        # (Professors may work on projects and want to share them with investors)
+        allowed_roles = ['student', 'professor']
+        if request.user.profile.user_role not in allowed_roles:
+            raise serializers.ValidationError("Only students and professors can send project view requests")
+
         # Check for duplicate request
         from projects.models import Project
         project = Project.objects.get(id=data['project_id'])
         recipient = User.objects.get(id=data['recipient_id'])
-        
+
         existing_request = ProjectViewRequest.objects.filter(
             project=project,
             recipient=recipient,
             status='pending'
         ).exists()
-        
+
         if existing_request:
             raise serializers.ValidationError("You already have a pending request to this user for this project")
-        
+
         return data
     
     def create(self, validated_data):
