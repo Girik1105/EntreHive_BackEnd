@@ -40,12 +40,10 @@ def send_welcome_email(user, request=None):
             html_message=html_message,
             fail_silently=False,
         )
-        
-        print(f"✅ Welcome email sent successfully to {user.email}")
+
         return True
         
     except Exception as e:
-        print(f"❌ Error sending welcome email to {user.email}: {e}")
         import traceback
         traceback.print_exc()
         return False
@@ -86,11 +84,9 @@ def send_password_reset_email(user, reset_url):
             fail_silently=False,
         )
         
-        print(f"✅ Password reset email sent successfully to {user.email}")
         return True
         
     except Exception as e:
-        print(f"❌ Error sending password reset email to {user.email}: {e}")
         import traceback
         traceback.print_exc()
         return False
@@ -144,11 +140,9 @@ def send_password_changed_email(user, request=None):
             fail_silently=False,
         )
         
-        print(f"✅ Password changed confirmation email sent successfully to {user.email}")
         return True
         
     except Exception as e:
-        print(f"❌ Error sending password changed email to {user.email}: {e}")
         import traceback
         traceback.print_exc()
         return False
@@ -189,11 +183,9 @@ def send_verification_email(user, verification_url):
             fail_silently=False,
         )
         
-        print(f"✅ Verification email sent successfully to {user.email}")
         return True
         
     except Exception as e:
-        print(f"❌ Error sending verification email to {user.email}: {e}")
         import traceback
         traceback.print_exc()
         return False

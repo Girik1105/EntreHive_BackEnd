@@ -334,6 +334,7 @@ class PublicUserProfileSerializer(serializers.ModelSerializer):
     """
     Serializer for public user profiles (limited fields based on privacy settings)
     """
+    id = serializers.IntegerField(source='user.id', read_only=True)  # Return User ID, not Profile ID
     full_name = serializers.SerializerMethodField()
     username = serializers.CharField(source='user.username', read_only=True)
     email = serializers.SerializerMethodField()
@@ -345,18 +346,29 @@ class PublicUserProfileSerializer(serializers.ModelSerializer):
     is_followed_by = serializers.SerializerMethodField()
     profile_picture = serializers.SerializerMethodField()
     banner_image = serializers.SerializerMethodField()
-    
+    profile = serializers.SerializerMethodField()  # Add profile object with nested data
+
     class Meta:
         model = UserProfile
         fields = [
             'id', 'username', 'email', 'full_name',
-            'user_role', 'profile_picture', 'bio', 
+            'user_role', 'profile_picture', 'bio',
             'location', 'university', 'university_name',
             'linkedin_url', 'website_url', 'github_url',
             'banner_style', 'banner_gradient', 'banner_image',  # Banner fields
             'role_specific_info', 'created_at',
-            'followers_count', 'following_count', 'is_following', 'is_followed_by'
+            'followers_count', 'following_count', 'is_following', 'is_followed_by',
+            'profile'  # Add profile to fields
         ]
+
+    def get_profile(self, obj):
+        """Return profile data matching SendProjectRequest.tsx interface"""
+        return {
+            'first_name': obj.first_name,
+            'last_name': obj.last_name,
+            'user_role': obj.user_role,
+            'profile_picture': self.get_profile_picture(obj)
+        }
     
     def get_full_name(self, obj):
         return obj.get_full_name()
