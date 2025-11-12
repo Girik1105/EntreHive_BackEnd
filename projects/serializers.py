@@ -2,6 +2,7 @@ from rest_framework import serializers
 from django.contrib.auth.models import User
 from .models import Project, ProjectInvitation
 from accounts.serializers import UserProfileSerializer
+from notifications.models import Notification
 
 
 class UserBasicSerializer(serializers.ModelSerializer):
@@ -200,8 +201,21 @@ class ProjectInvitationSerializer(serializers.ModelSerializer):
         
         if existing_invitation:
             raise serializers.ValidationError("A pending invitation already exists for this user.")
-        
-        return super().create(validated_data)
+
+        invitation = super().create(validated_data)
+
+        # Create notification for the invitee
+        try:
+            Notification.create_project_invite_notification(
+                inviter=request.user,
+                invitee=invitation.invitee,
+                project_id=project.id,
+                project_title=project.title
+            )
+        except Exception as e:
+            print(f"Error creating project invitation notification: {e}")
+
+        return invitation
 
 
 class AddTeamMemberSerializer(serializers.Serializer):

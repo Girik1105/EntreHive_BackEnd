@@ -11,6 +11,7 @@ from .serializers import (
     ProjectSerializer, ProjectCreateSerializer, ProjectUpdateSerializer,
     ProjectInvitationSerializer, AddTeamMemberSerializer
 )
+from notifications.models import Notification
 
 
 def is_investor(user):
@@ -427,6 +428,17 @@ def respond_to_invitation(request, invitation_id):
     if action == 'accept':
         success = invitation.accept()
         if success:
+            # Create notification for project owner that user joined
+            try:
+                Notification.create_project_join_notification(
+                    joiner=request.user,
+                    project_owner=invitation.project.owner,
+                    project_id=invitation.project.id,
+                    project_title=invitation.project.title
+                )
+            except Exception as e:
+                print(f"Error creating project join notification: {e}")
+
             return Response(
                 {'message': 'Invitation accepted successfully'},
                 status=status.HTTP_200_OK
