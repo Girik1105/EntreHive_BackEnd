@@ -29,45 +29,16 @@ class UserProfileDetailView(generics.RetrieveUpdateAPIView):
     def get_object(self):
         # Get or create profile for the authenticated user
         profile, created = UserProfile.objects.get_or_create(user=self.request.user)
-        print(f"=== BACKEND DEBUG: UserProfileDetailView.get_object ===")
-        print(f"User: {self.request.user}")
-        print(f"Profile ID: {profile.id}")
-        print(f"Profile created: {created}")
         return profile
     
     def get_serializer_class(self):
         method = self.request.method
-        print(f"=== BACKEND DEBUG: UserProfileDetailView.get_serializer_class ===")
-        print(f"HTTP Method: {method}")
         if method in ['PUT', 'PATCH']:
-            print("Using UserProfileCreateUpdateSerializer")
             return UserProfileCreateUpdateSerializer
-        print("Using UserProfileSerializer")
         return UserProfileSerializer
     
     def update(self, request, *args, **kwargs):
-        print("=" * 60)
-        print("=== BACKEND DEBUG: UserProfileDetailView.update START ===")
-        print("=" * 60)
-        print(f"Request method: {request.method}")
-        print(f"Request content type: {request.content_type}")
-        print(f"Request data: {request.data}")
-        print(f"Request FILES: {request.FILES}")
-        print(f"User: {request.user}")
-        
-        try:
-            result = super().update(request, *args, **kwargs)
-            print("=== BACKEND DEBUG: UserProfileDetailView.update SUCCESS ===")
-            print(f"Response status: {result.status_code}")
-            print(f"Response data: {result.data}")
-            return result
-        except Exception as e:
-            print("=== BACKEND DEBUG: UserProfileDetailView.update ERROR ===")
-            print(f"Exception type: {type(e)}")
-            print(f"Exception message: {str(e)}")
-            import traceback
-            print(f"Traceback: {traceback.format_exc()}")
-            raise
+        return super().update(request, *args, **kwargs)
 
 
 class ProfileUpdateView(generics.UpdateAPIView):
@@ -326,12 +297,12 @@ def follow_user(request, username):
             try:
                 from notifications.models import Notification
                 Notification.create_follow_notification(request.user, user_to_follow)
-            except Exception as e:
+            except Exception:
                 # Log the error but don't fail the follow action
-                print(f"Failed to create follow notification: {e}")
-            
+                pass
+
             return Response(
-                {'message': f'You are now following {username}', 'following': True}, 
+                {'message': f'You are now following {username}', 'following': True},
                 status=status.HTTP_201_CREATED
             )
         else:
@@ -465,61 +436,48 @@ def verify_email(request, uidb64, token):
     from django.utils.http import urlsafe_base64_decode
     from django.utils.encoding import force_str
     from django.utils import timezone
-    
-    print(f"=== Email Verification Request ===")
-    print(f"uidb64: {uidb64}")
-    print(f"token: {token}")
-    
+
     try:
         # Decode user ID
         uid = force_str(urlsafe_base64_decode(uidb64))
-        print(f"Decoded UID: {uid}")
         user = User.objects.get(pk=uid)
-        print(f"Found user: {user.username} ({user.email})")
-    except (TypeError, ValueError, OverflowError) as e:
-        print(f"Error decoding UID: {e}")
+    except (TypeError, ValueError, OverflowError):
         return Response(
             {'error': 'Invalid verification link'},
             status=status.HTTP_400_BAD_REQUEST
         )
     except User.DoesNotExist:
-        print(f"User with ID {uid} does not exist")
         return Response(
             {'error': 'Invalid verification link'},
             status=status.HTTP_400_BAD_REQUEST
         )
-    
+
     # Check token
     token_valid = default_token_generator.check_token(user, token)
-    print(f"Token valid: {token_valid}")
-    
+
     if not token_valid:
         return Response(
             {'error': 'Invalid or expired verification link'},
             status=status.HTTP_400_BAD_REQUEST
         )
-    
+
     # Get or create profile
     try:
         profile = user.profile
-        print(f"Profile found for user {user.username}")
     except UserProfile.DoesNotExist:
-        print(f"Profile not found, creating new profile for user {user.username}")
         profile = UserProfile.objects.create(user=user)
-    
+
     # Check if already verified
     if profile.email_verified:
-        print(f"Email already verified for user {user.username}")
         return Response(
             {'message': 'Email already verified', 'already_verified': True},
             status=status.HTTP_200_OK
         )
-    
+
     # Mark email as verified
     profile.email_verified = True
     profile.save()
-    print(f"✅ Email verified successfully for user {user.username}")
-    
+
     return Response(
         {'message': 'Email verified successfully', 'verified': True},
         status=status.HTTP_200_OK
@@ -578,8 +536,7 @@ def resend_verification_email(request):
                 {'error': 'Failed to send verification email'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
-    except Exception as e:
-        print(f"Error sending verification email: {e}")
+    except Exception:
         return Response(
             {'error': 'Failed to send verification email'},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
@@ -625,8 +582,7 @@ def simple_comprehensive_search(request):
             
             user_serializer = PublicUserProfileSerializer(user_profiles, many=True, context={'request': request})
             results['users'] = user_serializer.data
-        except Exception as e:
-            print(f"User search error: {e}")
+        except Exception:
             results['users'] = []
 
     # Search Projects using existing view
@@ -642,8 +598,7 @@ def simple_comprehensive_search(request):
             project_response = project_search(project_request)
             if hasattr(project_response, 'data') and project_response.data:
                 results['projects'] = project_response.data.get('results', [])[:10]
-        except Exception as e:
-            print(f"Project search error: {e}")
+        except Exception:
             results['projects'] = []
 
     # Search Posts using existing view
@@ -659,8 +614,7 @@ def simple_comprehensive_search(request):
             post_response = post_search(post_request)
             if hasattr(post_response, 'data') and post_response.data:
                 results['posts'] = post_response.data.get('results', [])[:10]
-        except Exception as e:
-            print(f"Post search error: {e}")
+        except Exception:
             results['posts'] = []
 
     # Search Hashtags using existing view
@@ -676,8 +630,7 @@ def simple_comprehensive_search(request):
             hashtag_response = hashtag_search(hashtag_request)
             if hasattr(hashtag_response, 'data') and hashtag_response.data:
                 results['hashtags'] = hashtag_response.data.get('hashtags', [])[:10]
-        except Exception as e:
-            print(f"Hashtag search error: {e}")
+        except Exception:
             results['hashtags'] = []
 
     return Response({

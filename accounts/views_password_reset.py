@@ -1,3 +1,4 @@
+import logging
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny
@@ -10,6 +11,7 @@ from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
 
 User = get_user_model()
+logger = logging.getLogger(__name__)
 
 
 @api_view(['POST'])
@@ -42,9 +44,7 @@ def custom_password_reset_confirm(request):
         user_id = force_str(urlsafe_base64_decode(uid))
         user = User.objects.get(pk=user_id)
     except (TypeError, ValueError, OverflowError, User.DoesNotExist) as e:
-        print(f"Error decoding uid or finding user: {e}")
-        print(f"UID: {uid}")
-        print(f"Decoded value: {force_str(urlsafe_base64_decode(uid)) if uid else 'None'}")
+        logger.error(f"Password reset: Error decoding uid or finding user - UID: {uid}, Error: {e}", exc_info=True)
         return Response(
             {'uid': ['Invalid value']},
             status=status.HTTP_400_BAD_REQUEST
@@ -76,7 +76,7 @@ def custom_password_reset_confirm(request):
         send_password_changed_email(user, request)
     except Exception as e:
         # Log the error but don't fail the password reset
-        print(f"Error sending password changed email: {e}")
+        logger.error(f"Failed to send password changed email to user {user.id}: {e}", exc_info=True)
     
     return Response(
         {'detail': 'Password has been reset successfully'},

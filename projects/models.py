@@ -37,6 +37,13 @@ class Project(models.Model):
         ('gradient', 'Gradient'),
         ('image', 'Image'),
     ]
+
+    # Approval status choices
+    APPROVAL_STATUS_CHOICES = [
+        ('pending', 'Pending Review'),
+        ('approved', 'Approved'),
+        ('rejected', 'Rejected'),
+    ]
     
     # Project needs
     NEED_CHOICES = [
@@ -161,12 +168,42 @@ class Project(models.Model):
     
     # Visibility and access
     visibility = models.CharField(
-        max_length=20, 
-        choices=VISIBILITY_CHOICES, 
+        max_length=20,
+        choices=VISIBILITY_CHOICES,
         default='private',
         help_text="Project visibility level"
     )
-    
+
+    # Approval workflow fields
+    approval_status = models.CharField(
+        max_length=20,
+        choices=APPROVAL_STATUS_CHOICES,
+        default='pending',
+        help_text="Approval status for project moderation"
+    )
+
+    reviewed_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='reviewed_projects',
+        help_text="Admin who reviewed this project"
+    )
+
+    reviewed_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="Timestamp when project was reviewed"
+    )
+
+    rejection_reason = models.TextField(
+        max_length=500,
+        blank=True,
+        null=True,
+        help_text="Reason for rejection (if applicable)"
+    )
+
     # Timestamps
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -179,6 +216,7 @@ class Project(models.Model):
             models.Index(fields=['project_type']),
             models.Index(fields=['status']),
             models.Index(fields=['visibility']),
+            models.Index(fields=['approval_status']),
             models.Index(fields=['created_at']),
         ]
     
