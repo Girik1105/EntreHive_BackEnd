@@ -60,7 +60,7 @@ class ProjectSerializer(serializers.ModelSerializer):
     can_edit = serializers.SerializerMethodField()
     banner_image = serializers.ImageField(required=False, allow_null=True)
     university = serializers.SerializerMethodField()
-    
+
     class Meta:
         model = Project
         fields = [
@@ -68,9 +68,11 @@ class ProjectSerializer(serializers.ModelSerializer):
             'summary', 'needs', 'categories', 'tags', 'preview_image',
             'banner_style', 'banner_gradient', 'banner_image',
             'pitch_url', 'repo_url', 'visibility', 'university', 'created_at', 'updated_at',
-            'team_count', 'is_team_member', 'can_edit'
+            'team_count', 'is_team_member', 'can_edit',
+            'approval_status', 'reviewed_at', 'rejection_reason'
         ]
-        read_only_fields = ['id', 'owner', 'university', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'owner', 'university', 'created_at', 'updated_at',
+                           'approval_status', 'reviewed_at', 'rejection_reason']
     
     def get_university(self, obj):
         """Return university information"""

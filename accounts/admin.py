@@ -14,7 +14,7 @@ class UserProfileAdmin(admin.ModelAdmin):
     ]
     search_fields = [
         'user__username', 'user__email', 'first_name', 'last_name',
-        'bio', 'university', 'location'
+        'bio', 'university__name', 'location'
     ]
     readonly_fields = ['created_at', 'updated_at']
     

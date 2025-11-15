@@ -1,12 +1,14 @@
 """
 Signal handlers for accounts app
 """
+import logging
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 from django.contrib.auth import get_user_model
 from .email_utils import send_welcome_email, send_verification_email
 
 User = get_user_model()
+logger = logging.getLogger(__name__)
 
 
 @receiver(post_save, sender=User)
@@ -54,7 +56,5 @@ def send_welcome_and_verification_emails(sender, instance, created, **kwargs):
             
         except Exception as e:
             # Log error but don't fail registration
-            print(f"Failed to send emails to {instance.email}: {e}")
-            import traceback
-            traceback.print_exc()
+            logger.error(f"Failed to send emails to {instance.email}: {e}", exc_info=True)
 

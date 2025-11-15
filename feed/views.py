@@ -277,22 +277,24 @@ class TimelineFeedViewSet(viewsets.ViewSet):
                     'score': score
                 })
         
-        # Get relevant projects
+        # Get relevant approved projects only
         if config.show_project_updates:
             if user_university:
                 projects = Project.objects.filter(
                     Q(visibility='university', university=user_university) |
                     Q(visibility='public'),
-                    created_at__gte=recent_cutoff
+                    created_at__gte=recent_cutoff,
+                    approval_status='approved'
                 ).exclude(owner=user).select_related('owner', 'university')[:30]
             else:
                 projects = Project.objects.filter(
                     visibility='public',
-                    created_at__gte=recent_cutoff
+                    created_at__gte=recent_cutoff,
+                    approval_status='approved'
                 ).exclude(owner=user).select_related('owner', 'university')[:30]
-            
+
             for project in projects:
-                score = self._calculate_content_score(project, user, config, 
+                score = self._calculate_content_score(project, user, config,
                                                    project.university == user_university)
                 content_items.append({
                     'content_type': 'project',
@@ -331,13 +333,14 @@ class TimelineFeedViewSet(viewsets.ViewSet):
                 'score': score
             })
         
-        # Get university projects
+        # Get approved university projects only
         university_projects = Project.objects.filter(
             Q(visibility='university', university=user_university) |
             Q(visibility='public', university=user_university),
-            created_at__gte=recent_cutoff
+            created_at__gte=recent_cutoff,
+            approval_status='approved'
         ).exclude(owner=user).select_related('owner', 'university')[:20]
-        
+
         for project in university_projects:
             score = self._calculate_content_score(project, user, config, True)
             content_items.append({
@@ -372,12 +375,13 @@ class TimelineFeedViewSet(viewsets.ViewSet):
                 'score': score
             })
         
-        # Get public projects
+        # Get approved public projects only
         public_projects = Project.objects.filter(
             visibility='public',
-            created_at__gte=recent_cutoff
+            created_at__gte=recent_cutoff,
+            approval_status='approved'
         ).exclude(owner=user).select_related('owner', 'university')[:30]
-        
+
         for project in public_projects:
             score = self._calculate_content_score(project, user, config, False)
             content_items.append({

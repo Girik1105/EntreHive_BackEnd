@@ -216,117 +216,47 @@ class UserProfileCreateUpdateSerializer(serializers.ModelSerializer):
     
     def validate(self, data):
         """Cross-field validation based on user role"""
-        print("=" * 50)
-        print("=== BACKEND DEBUG: Profile Validation Start ===")
-        print("=" * 50)
-        print(f"Validation data received: {data}")
-        print(f"Data type: {type(data)}")
-        print(f"Fields being updated: {list(data.keys())}")
-        print(f"Instance exists: {self.instance is not None}")
-        
-        if self.instance:
-            print(f"Current instance ID: {getattr(self.instance, 'id', 'None')}")
-            print(f"Current instance user: {getattr(self.instance, 'user', 'None')}")
-            print(f"Current instance user_role: {getattr(self.instance, 'user_role', 'None')}")
-            print(f"Current instance major: {getattr(self.instance, 'major', 'None')}")
-            print(f"Current instance university: {getattr(self.instance, 'university', 'None')}")
-            print(f"Current instance first_name: {getattr(self.instance, 'first_name', 'None')}")
-            print(f"Current instance last_name: {getattr(self.instance, 'last_name', 'None')}")
-        
-        # Log each field being processed
-        for key, value in data.items():
-            print(f"Processing field: {key} = {value} (type: {type(value)})")
-        
         # Skip validation if we're only updating banner fields
         banner_only_fields = {'banner_style', 'banner_gradient', 'banner_image'}
         if set(data.keys()).issubset(banner_only_fields):
-            print("=== BACKEND DEBUG: Banner-only update detected, skipping role validation ===")
             return data
-        
+
         user_role = data.get('user_role', self.instance.user_role if self.instance else 'student')
-        print(f"=== BACKEND DEBUG: User role for validation: {user_role} ===")
-        print(f"Role source: {'from data' if 'user_role' in data else 'from instance'}")
-        
+
         # Helper function to check if a field has a meaningful value
         def has_meaningful_value(field_name):
             value = data.get(field_name)
-            print(f"Checking meaningful value for '{field_name}': data value = {value}")
-            if value and str(value).strip():  # Check for non-empty string
-                print(f"'{field_name}' has meaningful value from data: {value}")
+            if value and str(value).strip():
                 return True
             # Check instance if no meaningful value in data
             if self.instance:
                 instance_value = getattr(self.instance, field_name, None)
-                print(f"'{field_name}' instance value: {instance_value}")
                 if instance_value and str(instance_value).strip():
-                    print(f"'{field_name}' has meaningful value from instance: {instance_value}")
                     return True
-            print(f"'{field_name}' has no meaningful value")
             return False
-        
+
         # Helper function to check if university exists
         def has_university():
-            university_check = (has_meaningful_value('university') or 
+            return (has_meaningful_value('university') or
                    (self.instance and self.instance.university))
-            print(f"University check result: {university_check}")
-            return university_check
-        
+
         # Role-specific validation - only validate if we're updating relevant fields AND they have meaningful values
-        print(f"=== BACKEND DEBUG: Starting role-specific validation for {user_role} ===")
-        
         if user_role == 'student':
-            print("=== BACKEND DEBUG: Student validation ===")
-            print(f"'major' in data: {'major' in data}")
             if 'major' in data:
-                major_meaningful = has_meaningful_value('major')
-                print(f"Major has meaningful value: {major_meaningful}")
-                if major_meaningful:
-                    print("Checking university requirement for major...")
+                if has_meaningful_value('major'):
                     if not has_university():
-                        print("=== BACKEND DEBUG: VALIDATION ERROR - University required for major ===")
                         raise serializers.ValidationError("University is required when major is specified")
-                    else:
-                        print("University requirement satisfied for major")
-                else:
-                    print("Major has no meaningful value, skipping university check")
-            else:
-                print("Major not in data, skipping student validation")
-        
+
         elif user_role == 'professor':
-            print("=== BACKEND DEBUG: Professor validation ===")
-            print(f"'department' in data: {'department' in data}")
             if 'department' in data:
-                dept_meaningful = has_meaningful_value('department')
-                print(f"Department has meaningful value: {dept_meaningful}")
-                if dept_meaningful:
-                    print("Checking university requirement for department...")
+                if has_meaningful_value('department'):
                     if not has_university():
-                        print("=== BACKEND DEBUG: VALIDATION ERROR - University required for department ===")
                         raise serializers.ValidationError("University is required when department is specified")
-                    else:
-                        print("University requirement satisfied for department")
-                else:
-                    print("Department has no meaningful value, skipping university check")
-            else:
-                print("Department not in data, skipping professor validation")
-        
+
         elif user_role == 'investor':
-            print("=== BACKEND DEBUG: Investor validation ===")
-            print(f"'investment_focus' in data: {'investment_focus' in data}")
-            if 'investment_focus' in data:
-                focus_meaningful = has_meaningful_value('investment_focus')
-                print(f"Investment focus has meaningful value: {focus_meaningful}")
-                if focus_meaningful:
-                    company_meaningful = has_meaningful_value('company')
-                    print(f"Company has meaningful value: {company_meaningful}")
-                    # This is just a recommendation, not a hard requirement
-                    print("Investor validation passed (company not required)")
-                else:
-                    print("Investment focus has no meaningful value, skipping company check")
-            else:
-                print("Investment focus not in data, skipping investor validation")
-        
-        print("=== BACKEND DEBUG: Validation successful, returning data ===")
+            # Investor validation - company is recommended but not required
+            pass
+
         return data
 
 
@@ -927,5 +857,5 @@ class CustomPasswordResetSerializer(serializers.Serializer):
                 if not success:
                     raise serializers.ValidationError("Failed to send password reset email")
             except Exception as e:
-                print(f"Error sending password reset email: {e}")
+                # Error will be logged by email_utils
                 raise serializers.ValidationError("Failed to send password reset email")

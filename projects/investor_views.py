@@ -29,36 +29,39 @@ class InvestorProjectDetailView(generics.RetrieveAPIView):
     lookup_field = 'id'
     
     def get_queryset(self):
-        """Restrict to public and university projects only"""
+        """Restrict to approved public and university projects only"""
         user = self.request.user
-        
+
         # Only allow investors to use this endpoint
         if not is_investor(user):
             return Project.objects.none()
-        
+
         # Investors can view:
-        # 1. Public projects
-        # 2. University projects (if they have a university set)
+        # 1. Approved public projects
+        # 2. Approved university projects (if they have a university set)
         queryset = Project.objects.filter(
-            visibility='public'
+            visibility='public',
+            approval_status='approved'
         ).select_related(
             'owner__profile', 'university'
         ).prefetch_related(
             'team_members__profile'
         )
-        
+
         # Add university projects if investor has university set
         if hasattr(user, 'profile') and user.profile.university:
             from django.db.models import Q
             queryset = Project.objects.filter(
-                Q(visibility='public') | 
+                Q(visibility='public') |
                 Q(visibility='university', university=user.profile.university)
+            ).filter(
+                approval_status='approved'
             ).select_related(
                 'owner__profile', 'university'
             ).prefetch_related(
                 'team_members__profile'
             )
-        
+
         return queryset
     
     def retrieve(self, request, *args, **kwargs):

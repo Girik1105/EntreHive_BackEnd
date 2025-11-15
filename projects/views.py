@@ -50,27 +50,33 @@ class ProjectListCreateView(generics.ListCreateAPIView):
         RESTRICTED: Investors cannot use this endpoint
         """
         user = self.request.user
-        
+
         # Restrict investor access
         restrict_investor_access(user)
         queryset = Project.objects.select_related('owner__profile').prefetch_related('team_members__profile')
-        
+
+        # Approval filtering - users can see:
+        # 1. Their own projects (any approval status)
+        # 2. Projects they're team members of (any approval status)
+        # 3. Only approved projects from others
+        user_projects_filter = Q(owner=user) | Q(team_members=user)
+        approval_filter = Q(approval_status='approved') | user_projects_filter
+        queryset = queryset.filter(approval_filter)
+
         # Filter by visibility - users can see:
         # 1. Their own projects (any visibility)
         # 2. Projects they're team members of (any visibility)
         # 3. Public projects
         # 4. University projects if they're from same university
         # Note: Private projects are only visible to owner and team members
-        
+
         visibility_filter = Q(visibility='public')
-        
+
         # Add university filter if user has university info - only show university projects from same university
         if hasattr(user, 'profile') and user.profile.university:
             visibility_filter |= Q(visibility='university', university=user.profile.university)
-        
+
         # Add user's own projects and projects they're team members of (including private)
-        user_projects_filter = Q(owner=user) | Q(team_members=user)
-        
         final_filter = visibility_filter | user_projects_filter
         queryset = queryset.filter(final_filter).distinct()
         
@@ -170,25 +176,29 @@ class ProjectDetailView(generics.RetrieveUpdateDestroyAPIView):
     
     def can_view_project(self, project, user):
         """
-        Check if user can view the project based on visibility rules
+        Check if user can view the project based on visibility and approval rules
         """
-        # Owner and team members can always view
+        # Owner and team members can always view (any approval status)
         if project.is_team_member(user):
             return True
-        
+
+        # Non-team members can only view approved projects
+        if project.approval_status != 'approved':
+            return False
+
         # Private projects are only visible to owner and team members
         if project.visibility == 'private':
             return False  # Already handled by is_team_member check above
-        
+
         # Public projects are viewable by everyone
         if project.visibility == 'public':
             return True
-        
+
         # University projects are viewable by users from same university
         if project.visibility == 'university':
             if hasattr(user, 'profile') and user.profile.university:
                 return project.university == user.profile.university
-        
+
         return False
     
     def perform_update(self, serializer):
@@ -247,33 +257,39 @@ class UserProjectsView(generics.ListAPIView):
         user_id = self.kwargs.get('user_id')
         target_user = get_object_or_404(User, id=user_id)
         current_user = self.request.user
-        
+
         # Base filter: projects where target user is owner or team member
         queryset = Project.objects.select_related('owner__profile').prefetch_related('team_members__profile').filter(
             Q(owner=target_user) | Q(team_members=target_user)
         ).distinct()
-        
+
+        # Apply approval filtering - current user can only see:
+        # 1. Their own projects (any approval status)
+        # 2. Projects they're team members of (any approval status)
+        # 3. Only approved projects from others
+        user_projects_filter = Q(owner=current_user) | Q(team_members=current_user)
+        approval_filter = Q(approval_status='approved') | user_projects_filter
+        queryset = queryset.filter(approval_filter)
+
         # Apply visibility filters - current user can only see:
         # 1. Their own projects (any visibility)
-        # 2. Projects they're team members of (any visibility) 
+        # 2. Projects they're team members of (any visibility)
         # 3. Public projects
         # 4. University projects (if same university)
         # Note: Private projects are only visible to owner and team members
-        
+
         if current_user != target_user:
             # Filter out private projects unless current user is a team member
             visibility_filter = Q(visibility='public')
-            
+
             # Add university filter if users are from same university
             if (hasattr(current_user, 'profile') and current_user.profile.university):
                 visibility_filter |= Q(visibility='university', university=current_user.profile.university)
-            
+
             # Add projects where current user is owner or team member (including private)
-            user_projects_filter = Q(owner=current_user) | Q(team_members=current_user)
-            
             final_filter = visibility_filter | user_projects_filter
             queryset = queryset.filter(final_filter)
-        
+
         return queryset.order_by('-created_at')
 
 
@@ -475,22 +491,26 @@ def project_search(request):
     
     # Base queryset with proper permissions (same logic as ProjectListCreateView)
     queryset = Project.objects.select_related('owner__profile').prefetch_related('team_members__profile')
-    
-    # Apply visibility filtering
+
+    # Apply approval and visibility filtering
     if user.is_authenticated:
+        # Approval filtering - users can see their own projects (any status) or approved projects
+        user_projects_filter = Q(owner=user) | Q(team_members=user)
+        approval_filter = Q(approval_status='approved') | user_projects_filter
+        queryset = queryset.filter(approval_filter)
+
         visibility_filter = Q(visibility='public')
-        
+
         # Add university filter if user has university info
         if hasattr(user, 'profile') and user.profile.university:
             visibility_filter |= Q(visibility='university', university=user.profile.university)
-        
+
         # Add user's own projects and projects they're team members of
-        user_projects_filter = Q(owner=user) | Q(team_members=user)
         final_filter = visibility_filter | user_projects_filter
         queryset = queryset.filter(final_filter)
     else:
-        # Only show public projects for unauthenticated users
-        queryset = queryset.filter(visibility='public')
+        # Only show public approved projects for unauthenticated users
+        queryset = queryset.filter(visibility='public', approval_status='approved')
     
     # Search functionality - comprehensive search across all relevant fields
     search_filters = Q()
@@ -552,19 +572,24 @@ def categories_search(request):
     
     # Base queryset with proper permissions
     queryset = Project.objects.select_related('owner__profile')
-    
-    # Apply visibility filtering
+
+    # Apply approval and visibility filtering
     if user.is_authenticated:
+        # Approval filtering - users can see their own projects (any status) or approved projects
+        user_projects_filter = Q(owner=user) | Q(team_members=user)
+        approval_filter = Q(approval_status='approved') | user_projects_filter
+        queryset = queryset.filter(approval_filter)
+
         visibility_filter = Q(visibility='public')
-        
+
         if hasattr(user, 'profile') and user.profile.university:
             visibility_filter |= Q(visibility='university', university=user.profile.university)
-        
-        user_projects_filter = Q(owner=user) | Q(team_members=user)
+
         final_filter = visibility_filter | user_projects_filter
         queryset = queryset.filter(final_filter)
     else:
-        queryset = queryset.filter(visibility='public')
+        # Only show public approved projects for unauthenticated users
+        queryset = queryset.filter(visibility='public', approval_status='approved')
     
     # Extract all categories and tags
     all_categories = set()

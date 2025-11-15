@@ -60,28 +60,29 @@ def investor_feed(request):
         topics = user_interests
     
     # Base project query (without JSONField filters for SQLite compatibility)
-    project_query = Q(visibility__in=['public', 'university'])
-    
+    # Only show approved projects to investors
+    project_query = Q(visibility__in=['public', 'university']) & Q(approval_status='approved')
+
     # University filtering
     if feed_type == 'university' and university_id:
         project_query &= Q(university_id=university_id)
-    
+
     # Search filtering (text fields only)
     if search_query:
         project_query &= (
             Q(title__icontains=search_query) |
             Q(summary__icontains=search_query)
         )
-    
+
     # Quick filter for status (non-JSON field)
     if quick_filter == 'prototype':
         project_query &= Q(status__in=['mvp', 'launched'])
-    
+
     # Cursor pagination
     if cursor:
         project_query &= Q(created_at__lt=cursor)
-    
-    # Get all matching projects (we'll filter by topics in Python)
+
+    # Get all matching approved projects (we'll filter by topics in Python)
     all_projects = Project.objects.filter(project_query).select_related(
         'owner', 'owner__profile', 'university'
     ).prefetch_related('team_members', 'team_members__profile').order_by('-created_at')
@@ -99,17 +100,19 @@ def investor_feed(request):
                    any(need in project.needs for need in ['dev', 'design', 'marketing'])):
                 continue
         
-        # Check topic filtering - RELAXED: Show ALL projects if using interests
+        # Check topic filtering - strict filtering for both manual and saved interests
         categories = project.categories if isinstance(project.categories, list) else []
-        
+
         if topics and topics_str:  # Manual topic selection - strict filtering
             matches = [topic for topic in topics if topic in categories]
             if not matches:
                 continue
             match_score = len(matches)
-        elif user_interests:  # Using saved interests - show all, prioritize matches
+        elif user_interests:  # Using saved interests - strict filtering (only show matching projects)
             matches = [topic for topic in topics if topic in categories]
-            match_score = len(matches) * 2 if matches else 0.5  # Boost matches, but include all
+            if not matches:
+                continue  # Skip projects that don't match any saved interests
+            match_score = len(matches) * 2  # Boost matches
         else:  # No filtering - show all
             match_score = 0
         
