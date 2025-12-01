@@ -3,6 +3,10 @@ from django.contrib.auth.models import User
 from django.db import models
 from .models import Post, Comment, Like, PostShare
 from projects.models import Project
+from utils.image_compression import ImageCompressor
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class AuthorSerializer(serializers.ModelSerializer):
@@ -85,7 +89,8 @@ class CommentSerializer(serializers.ModelSerializer):
 
 class PostSerializer(serializers.ModelSerializer):
     """
-    Main post serializer with all related data
+    Main post serializer with all related data.
+    Includes automatic image compression for post images.
     """
     author = AuthorSerializer(read_only=True)
     tagged_projects = ProjectTagSerializer(many=True, read_only=True)
@@ -95,22 +100,23 @@ class PostSerializer(serializers.ModelSerializer):
         required=False,
         allow_empty=True
     )
-    
+    image = serializers.ImageField(required=False, allow_null=True)
+
     # Interaction counts and status
     likes_count = serializers.SerializerMethodField()
     comments_count = serializers.SerializerMethodField()
     is_liked = serializers.SerializerMethodField()
-    
+
     # Comments (for detailed view) - only top-level comments with nested replies
     comments = serializers.SerializerMethodField()
-    
+
     # Permissions
     can_edit = serializers.SerializerMethodField()
     can_delete = serializers.SerializerMethodField()
-    
+
     # Image URL
     image_url = serializers.SerializerMethodField()
-    
+
     class Meta:
         model = Post
         fields = [
@@ -120,6 +126,31 @@ class PostSerializer(serializers.ModelSerializer):
             'can_edit', 'can_delete', 'created_at', 'updated_at'
         ]
         read_only_fields = ['id', 'author', 'is_edited', 'created_at', 'updated_at']
+
+    def validate_image(self, value):
+        """Validate and prepare image for compression."""
+        if value:
+            try:
+                is_valid, error = ImageCompressor.validate_image(value)
+                if not is_valid:
+                    raise serializers.ValidationError(error)
+            except Exception as e:
+                logger.warning(f"Post image validation failed: {e}")
+                raise serializers.ValidationError(f"Invalid image: {str(e)}")
+        return value
+
+    def _compress_image(self, validated_data):
+        """Compress post image if present."""
+        if 'image' in validated_data and validated_data['image']:
+            try:
+                validated_data['image'] = ImageCompressor.compress_post_image(
+                    validated_data['image']
+                )
+                logger.info("Post image compressed successfully")
+            except Exception as e:
+                logger.error(f"Post image compression failed: {e}")
+                raise serializers.ValidationError(f"Failed to process image: {str(e)}")
+        return validated_data
     
     def get_likes_count(self, obj):
         return obj.get_likes_count()
@@ -160,10 +191,13 @@ class PostSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         # Extract tagged project IDs
         tagged_project_ids = validated_data.pop('tagged_project_ids', [])
-        
+
+        # Compress image before saving
+        validated_data = self._compress_image(validated_data)
+
         # Create the post
         post = Post.objects.create(**validated_data)
-        
+
         # Add tagged projects
         if tagged_project_ids:
             # Filter projects that the user can tag (public projects or projects they're part of)
@@ -175,24 +209,27 @@ class PostSerializer(serializers.ModelSerializer):
                 models.Q(owner=user) |
                 models.Q(team_members=user)
             ).distinct()
-            
+
             post.tagged_projects.set(accessible_projects)
-        
+
         return post
-    
+
     def update(self, instance, validated_data):
         # Extract tagged project IDs
         tagged_project_ids = validated_data.pop('tagged_project_ids', None)
-        
+
         # Mark as edited if content changed
         if 'content' in validated_data and validated_data['content'] != instance.content:
             validated_data['is_edited'] = True
-        
+
+        # Compress image before saving
+        validated_data = self._compress_image(validated_data)
+
         # Update the post
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
         instance.save()
-        
+
         # Update tagged projects if provided
         if tagged_project_ids is not None:
             user = self.context['request'].user
@@ -203,9 +240,9 @@ class PostSerializer(serializers.ModelSerializer):
                 models.Q(owner=user) |
                 models.Q(team_members=user)
             ).distinct()
-            
+
             instance.tagged_projects.set(accessible_projects)
-        
+
         return instance
 
 

@@ -3,6 +3,10 @@ from django.contrib.auth.models import User
 from .models import Project, ProjectInvitation
 from accounts.serializers import UserProfileSerializer
 from notifications.models import Notification
+from utils.image_compression import ImageCompressor
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class UserBasicSerializer(serializers.ModelSerializer):
@@ -52,7 +56,10 @@ class UserBasicSerializer(serializers.ModelSerializer):
 
 
 class ProjectSerializer(serializers.ModelSerializer):
-    """Serializer for Project model"""
+    """
+    Serializer for Project model.
+    Includes automatic image compression for banner images.
+    """
     owner = UserBasicSerializer(read_only=True)
     team_members = UserBasicSerializer(many=True, read_only=True)
     team_count = serializers.SerializerMethodField()
@@ -73,7 +80,32 @@ class ProjectSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['id', 'owner', 'university', 'created_at', 'updated_at',
                            'approval_status', 'reviewed_at', 'rejection_reason']
-    
+
+    def validate_banner_image(self, value):
+        """Validate banner image."""
+        if value:
+            try:
+                is_valid, error = ImageCompressor.validate_image(value)
+                if not is_valid:
+                    raise serializers.ValidationError(error)
+            except Exception as e:
+                logger.warning(f"Project banner image validation failed: {e}")
+                raise serializers.ValidationError(f"Invalid image: {str(e)}")
+        return value
+
+    def _compress_banner_image(self, validated_data):
+        """Compress banner image if present."""
+        if 'banner_image' in validated_data and validated_data['banner_image']:
+            try:
+                validated_data['banner_image'] = ImageCompressor.compress_banner_image(
+                    validated_data['banner_image']
+                )
+                logger.info("Project banner image compressed successfully")
+            except Exception as e:
+                logger.error(f"Project banner image compression failed: {e}")
+                raise serializers.ValidationError(f"Failed to process banner image: {str(e)}")
+        return validated_data
+
     def get_university(self, obj):
         """Return university information"""
         if obj.university:
@@ -83,31 +115,41 @@ class ProjectSerializer(serializers.ModelSerializer):
                 'short_name': getattr(obj.university, 'short_name', obj.university.name)
             }
         return None
-    
+
     def get_team_count(self, obj):
         return obj.get_team_count()
-    
+
     def get_is_team_member(self, obj):
         request = self.context.get('request')
         if request and request.user.is_authenticated:
             return obj.is_team_member(request.user)
         return False
-    
+
     def get_can_edit(self, obj):
         request = self.context.get('request')
         if request and request.user.is_authenticated:
             return request.user == obj.owner
         return False
-    
+
     def create(self, validated_data):
         # Set the owner to the current user
         request = self.context.get('request')
         validated_data['owner'] = request.user
+        # Compress banner image
+        validated_data = self._compress_banner_image(validated_data)
         return super().create(validated_data)
+
+    def update(self, instance, validated_data):
+        # Compress banner image
+        validated_data = self._compress_banner_image(validated_data)
+        return super().update(instance, validated_data)
 
 
 class ProjectCreateSerializer(serializers.ModelSerializer):
-    """Serializer for creating projects"""
+    """
+    Serializer for creating projects.
+    Includes automatic image compression for banner images.
+    """
     banner_image = serializers.ImageField(required=False, allow_null=True)
 
     class Meta:
@@ -119,16 +161,43 @@ class ProjectCreateSerializer(serializers.ModelSerializer):
             'repo_url', 'visibility'
         ]
         read_only_fields = ['id']
-    
+
+    def validate_banner_image(self, value):
+        """Validate banner image."""
+        if value:
+            try:
+                is_valid, error = ImageCompressor.validate_image(value)
+                if not is_valid:
+                    raise serializers.ValidationError(error)
+            except Exception as e:
+                logger.warning(f"Project banner image validation failed: {e}")
+                raise serializers.ValidationError(f"Invalid image: {str(e)}")
+        return value
+
     def create(self, validated_data):
         # Set the owner to the current user
         request = self.context.get('request')
         validated_data['owner'] = request.user
+
+        # Compress banner image if present
+        if 'banner_image' in validated_data and validated_data['banner_image']:
+            try:
+                validated_data['banner_image'] = ImageCompressor.compress_banner_image(
+                    validated_data['banner_image']
+                )
+                logger.info("Project banner image compressed successfully")
+            except Exception as e:
+                logger.error(f"Project banner image compression failed: {e}")
+                raise serializers.ValidationError(f"Failed to process banner image: {str(e)}")
+
         return super().create(validated_data)
 
 
 class ProjectUpdateSerializer(serializers.ModelSerializer):
-    """Serializer for updating projects"""
+    """
+    Serializer for updating projects.
+    Includes automatic image compression for banner images.
+    """
     banner_image = serializers.ImageField(required=False, allow_null=True)
 
     class Meta:
@@ -139,6 +208,32 @@ class ProjectUpdateSerializer(serializers.ModelSerializer):
             'banner_gradient', 'banner_image', 'pitch_url',
             'repo_url', 'visibility'
         ]
+
+    def validate_banner_image(self, value):
+        """Validate banner image."""
+        if value:
+            try:
+                is_valid, error = ImageCompressor.validate_image(value)
+                if not is_valid:
+                    raise serializers.ValidationError(error)
+            except Exception as e:
+                logger.warning(f"Project banner image validation failed: {e}")
+                raise serializers.ValidationError(f"Invalid image: {str(e)}")
+        return value
+
+    def update(self, instance, validated_data):
+        # Compress banner image if present
+        if 'banner_image' in validated_data and validated_data['banner_image']:
+            try:
+                validated_data['banner_image'] = ImageCompressor.compress_banner_image(
+                    validated_data['banner_image']
+                )
+                logger.info("Project banner image compressed successfully")
+            except Exception as e:
+                logger.error(f"Project banner image compression failed: {e}")
+                raise serializers.ValidationError(f"Failed to process banner image: {str(e)}")
+
+        return super().update(instance, validated_data)
 
 
 class ProjectInvitationSerializer(serializers.ModelSerializer):

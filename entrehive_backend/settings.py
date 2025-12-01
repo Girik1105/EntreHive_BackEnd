@@ -152,6 +152,17 @@ DATABASES = {
     }
 }
 
+# Cache configuration for rate limiting
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+        'LOCATION': 'unique-snowflake',
+    }
+}
+
+# Rate limiting configuration
+RATELIMIT_USE_CACHE = 'default'
+RATELIMIT_ENABLE = True
 
 # POSTGRES_DB = os.environ.get("POSTGRES_DB") #database name
 # POSTGRES_PASSWORD = os.environ.get("POSTGRES_PASSWORD") # database user password

@@ -3,7 +3,11 @@ from dj_rest_auth.registration.serializers import RegisterSerializer
 from django.contrib.auth import get_user_model
 from django.db.models import Q
 from .models import UserProfile
+from utils.image_compression import ImageCompressor
 import re
+import logging
+
+logger = logging.getLogger(__name__)
 
 User = get_user_model()
 
@@ -197,9 +201,11 @@ class UserProfileSerializer(serializers.ModelSerializer):
 class UserProfileCreateUpdateSerializer(serializers.ModelSerializer):
     """
     Serializer for creating/updating user profiles with role-specific validation
+    Includes automatic image compression for profile pictures and banner images.
     """
     banner_image = serializers.ImageField(required=False, allow_null=True)
-    
+    profile_picture = serializers.ImageField(required=False, allow_null=True)
+
     class Meta:
         model = UserProfile
         fields = [
@@ -213,7 +219,67 @@ class UserProfileCreateUpdateSerializer(serializers.ModelSerializer):
             'is_profile_public', 'show_email'
         ]
         read_only_fields = ['user_role']  # Role should not be editable after account creation
-    
+
+    def validate_profile_picture(self, value):
+        """Validate and compress profile picture."""
+        if value:
+            try:
+                is_valid, error = ImageCompressor.validate_image(value)
+                if not is_valid:
+                    raise serializers.ValidationError(error)
+            except Exception as e:
+                logger.warning(f"Profile picture validation failed: {e}")
+                raise serializers.ValidationError(f"Invalid image: {str(e)}")
+        return value
+
+    def validate_banner_image(self, value):
+        """Validate and compress banner image."""
+        if value:
+            try:
+                is_valid, error = ImageCompressor.validate_image(value)
+                if not is_valid:
+                    raise serializers.ValidationError(error)
+            except Exception as e:
+                logger.warning(f"Banner image validation failed: {e}")
+                raise serializers.ValidationError(f"Invalid image: {str(e)}")
+        return value
+
+    def _compress_images(self, validated_data):
+        """Compress profile picture and banner image if present."""
+        # Compress profile picture
+        if 'profile_picture' in validated_data and validated_data['profile_picture']:
+            try:
+                validated_data['profile_picture'] = ImageCompressor.compress_profile_picture(
+                    validated_data['profile_picture']
+                )
+                logger.info("Profile picture compressed successfully")
+            except Exception as e:
+                logger.error(f"Profile picture compression failed: {e}")
+                raise serializers.ValidationError(f"Failed to process profile picture: {str(e)}")
+
+        # Compress banner image
+        if 'banner_image' in validated_data and validated_data['banner_image']:
+            try:
+                validated_data['banner_image'] = ImageCompressor.compress_banner_image(
+                    validated_data['banner_image']
+                )
+                logger.info("Banner image compressed successfully")
+            except Exception as e:
+                logger.error(f"Banner image compression failed: {e}")
+                raise serializers.ValidationError(f"Failed to process banner image: {str(e)}")
+
+        return validated_data
+
+    def create(self, validated_data):
+        """Create profile with compressed images."""
+        validated_data = self._compress_images(validated_data)
+        return super().create(validated_data)
+
+    def update(self, instance, validated_data):
+        """Update profile with compressed images."""
+        validated_data = self._compress_images(validated_data)
+        return super().update(instance, validated_data)
+
     def validate(self, data):
         """Cross-field validation based on user role"""
         # Skip validation if we're only updating banner fields

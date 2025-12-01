@@ -6,9 +6,11 @@ from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from django.contrib.auth import get_user_model
 from django.shortcuts import get_object_or_404
 from django.db.models import Q
+from django_ratelimit.decorators import ratelimit
+from django_ratelimit.exceptions import Ratelimited
 from .models import UserProfile, Follow
 from .serializers import (
-    UserProfileSerializer, 
+    UserProfileSerializer,
     UserProfileCreateUpdateSerializer,
     PublicUserProfileSerializer,
     EnhancedUserProfileSerializer,
@@ -170,39 +172,43 @@ class ProfileListView(generics.ListAPIView):
 
 
 @api_view(['GET'])
+@ratelimit(key='ip', rate='5/m', method='GET', block=True)
 def check_username(request):
     """
     Check if username is available
+    Rate limited: 5 requests per minute per IP to prevent enumeration attacks
     """
     username = request.GET.get('username', '')
     if not username:
         return Response(
-            {'error': 'Username parameter is required'}, 
+            {'error': 'Username parameter is required'},
             status=status.HTTP_400_BAD_REQUEST
         )
-    
+
     is_available = not User.objects.filter(username=username).exists()
     return Response(
-        {'available': is_available}, 
+        {'available': is_available},
         status=status.HTTP_200_OK
     )
 
 
 @api_view(['GET'])
+@ratelimit(key='ip', rate='5/m', method='GET', block=True)
 def check_email(request):
     """
     Check if email is available
+    Rate limited: 5 requests per minute per IP to prevent enumeration attacks
     """
     email = request.GET.get('email', '')
     if not email:
         return Response(
-            {'error': 'Email parameter is required'}, 
+            {'error': 'Email parameter is required'},
             status=status.HTTP_400_BAD_REQUEST
         )
-    
+
     is_available = not User.objects.filter(email=email).exists()
     return Response(
-        {'available': is_available}, 
+        {'available': is_available},
         status=status.HTTP_200_OK
     )
 
