@@ -108,7 +108,6 @@ ACCOUNT_USER_MODEL_EMAIL_FIELD = "email"
 
 # Modern allauth configuration
 ACCOUNT_LOGIN_METHODS = {'email'}  # Allow login with email
-ACCOUNT_EMAIL_REQUIRED = True  # Required for email login
 ACCOUNT_SIGNUP_FIELDS = ['email*', 'username*', 'password1*', 'password2*']  # Required fields with asterisk
 
 # Registration form fields
@@ -222,8 +221,9 @@ REST_AUTH = {
     'JWT_AUTH_COOKIE': 'access',
     'JWT_AUTH_REFRESH_COOKIE': 'refresh',
     'JWT_AUTH_SECURE': True,
-    'JWT_AUTH_SAMESITE': 'Lax',
+    'JWT_AUTH_SAMESITE': 'None',  # Required for cross-origin cookie setting (Netlify → Heroku)
     'JWT_AUTH_HTTPONLY': True,  # ✅ SECURITY FIX: Prevents XSS token theft
+    'JWT_AUTH_COOKIE_DOMAIN': os.environ.get('JWT_COOKIE_DOMAIN', None),
     'JWT_AUTH_RETURN_EXPIRATION': True,
     'SESSION_LOGIN': False,
 
