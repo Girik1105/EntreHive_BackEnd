@@ -6,10 +6,10 @@ from rest_framework.exceptions import PermissionDenied
 from django.contrib.auth.models import User
 from django.db.models import Q
 from django.shortcuts import get_object_or_404
-from .models import Project, ProjectInvitation
+from .models import Project, ProjectInvitation, Category
 from .serializers import (
     ProjectSerializer, ProjectCreateSerializer, ProjectUpdateSerializer,
-    ProjectInvitationSerializer, AddTeamMemberSerializer
+    ProjectInvitationSerializer, AddTeamMemberSerializer, CategorySerializer
 )
 from notifications.models import Notification
 
@@ -32,6 +32,16 @@ class ProjectPagination(PageNumberPagination):
     page_size = 10
     page_size_query_param = 'page_size'
     max_page_size = 100
+
+
+class CategoryListView(generics.ListAPIView):
+    """List all active categories. Used by project create/edit forms."""
+    serializer_class = CategorySerializer
+    permission_classes = [permissions.IsAuthenticated]
+    pagination_class = None
+
+    def get_queryset(self):
+        return Category.objects.filter(is_active=True)
 
 
 class ProjectListCreateView(generics.ListCreateAPIView):

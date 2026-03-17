@@ -4,7 +4,7 @@ from rest_framework.response import Response
 from rest_framework import status
 from django.db.models import Q
 from django.contrib.auth.models import User
-from projects.models import Project
+from projects.models import Project, Category
 from posts.models import Post
 from projects.serializers import ProjectSerializer
 from posts.serializers import PostSerializer
@@ -261,22 +261,10 @@ def investor_topics(request):
             status=status.HTTP_403_FORBIDDEN
         )
 
-    # Define available topics
-    topics = [
-        {'id': 'AI', 'label': 'AI', 'icon': '🤖'},
-        {'id': 'Web Dev', 'label': 'Web Dev', 'icon': '💻'},
-        {'id': 'Fintech', 'label': 'Fintech', 'icon': '💰'},
-        {'id': 'Robotics', 'label': 'Robotics', 'icon': '🤖'},
-        {'id': 'Biotech', 'label': 'Biotech', 'icon': '🧬'},
-        {'id': 'Climate', 'label': 'Climate', 'icon': '🌍'},
-        {'id': 'Hardware', 'label': 'Hardware', 'icon': '⚙️'},
-        {'id': 'SaaS', 'label': 'SaaS', 'icon': '☁️'},
-        {'id': 'EdTech', 'label': 'EdTech', 'icon': '📚'},
-        {'id': 'HealthTech', 'label': 'HealthTech', 'icon': '🏥'},
-        {'id': 'Social Impact', 'label': 'Social Impact', 'icon': '💝'},
-        {'id': 'Gaming', 'label': 'Gaming', 'icon': '🎮'},
-    ]
-    
+    # Fetch topics from admin-managed categories
+    categories = Category.objects.filter(is_active=True).order_by('display_order', 'name')
+    topics = [{'id': c.name, 'label': c.name} for c in categories]
+
     return Response({'topics': topics})
 
 

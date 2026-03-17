@@ -3,6 +3,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
 from accounts.models import UserProfile
+from projects.models import Category
 
 
 def is_investor_or_mentor(user):
@@ -51,12 +52,10 @@ def investor_interests(request):
                 status=status.HTTP_400_BAD_REQUEST
             )
         
-        # Validate each interest
-        valid_topics = [
-            'AI', 'Web Dev', 'Fintech', 'Robotics', 'Biotech', 
-            'Climate', 'Hardware', 'SaaS', 'EdTech', 'HealthTech', 
-            'Social Impact', 'Gaming'
-        ]
+        # Validate each interest against admin-managed categories
+        valid_topics = list(
+            Category.objects.filter(is_active=True).values_list('name', flat=True)
+        )
         
         for interest in interests:
             if not isinstance(interest, str):

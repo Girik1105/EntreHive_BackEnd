@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from django.contrib.auth.models import User
-from .models import Project, ProjectInvitation
+from .models import Project, ProjectInvitation, Category
 from accounts.serializers import UserProfileSerializer
 from notifications.models import Notification
 from utils.image_compression import ImageCompressor
@@ -55,6 +55,30 @@ class UserBasicSerializer(serializers.ModelSerializer):
         }
 
 
+class CategorySerializer(serializers.ModelSerializer):
+    """Serializer for admin-managed project categories."""
+    class Meta:
+        model = Category
+        fields = ['id', 'name', 'slug']
+
+
+def _validate_categories_against_model(value):
+    """Shared validation: ensure categories exist in admin-managed Category table."""
+    if not isinstance(value, list):
+        raise serializers.ValidationError("Categories must be a list.")
+    if value:
+        valid_names = set(
+            Category.objects.filter(is_active=True).values_list('name', flat=True)
+        )
+        invalid = [c for c in value if c not in valid_names]
+        if invalid:
+            raise serializers.ValidationError(
+                f"Invalid categories: {', '.join(invalid)}. "
+                f"Must be from the admin-defined list."
+            )
+    return value
+
+
 class ProjectSerializer(serializers.ModelSerializer):
     """
     Serializer for Project model.
@@ -80,6 +104,9 @@ class ProjectSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['id', 'owner', 'university', 'created_at', 'updated_at',
                            'approval_status', 'reviewed_at', 'rejection_reason']
+
+    def validate_categories(self, value):
+        return _validate_categories_against_model(value)
 
     def validate_banner_image(self, value):
         """Validate banner image."""
@@ -162,6 +189,9 @@ class ProjectCreateSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['id']
 
+    def validate_categories(self, value):
+        return _validate_categories_against_model(value)
+
     def validate_banner_image(self, value):
         """Validate banner image."""
         if value:
@@ -208,6 +238,9 @@ class ProjectUpdateSerializer(serializers.ModelSerializer):
             'banner_gradient', 'banner_image', 'pitch_url',
             'repo_url', 'visibility'
         ]
+
+    def validate_categories(self, value):
+        return _validate_categories_against_model(value)
 
     def validate_banner_image(self, value):
         """Validate banner image."""

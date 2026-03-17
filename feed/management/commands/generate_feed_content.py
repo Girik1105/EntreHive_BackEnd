@@ -1,5 +1,6 @@
 from django.core.management.base import BaseCommand
 from django.contrib.auth.models import User
+from django.db.models.signals import post_save
 from django.utils import timezone
 from datetime import timedelta
 import random
@@ -173,49 +174,64 @@ class Command(BaseCommand):
         ]
         
         new_users = []
-        for i in range(count):
-            first_name = random.choice(first_names)
-            last_name = random.choice(last_names)
-            username = f"{first_name.lower()}.{last_name.lower()}{random.randint(100, 999)}"
-            
-            # Check if user already exists
-            if User.objects.filter(username=username).exists():
-                continue
-                
-            university = random.choice(universities)
-            
-            user = User.objects.create_user(
-                username=username,
-                email=f"{username}@{university.email_domain}",
-                first_name=first_name,
-                last_name=last_name,
-                password='password123'
-            )
-            
-            # Create profile
-            user_role = random.choice(['student', 'professor', 'investor'])
-            profile_data = {
-                'first_name': first_name,
-                'last_name': last_name,
-                'user_role': user_role,
-                'bio': random.choice(bios),
-                'location': f"{random.choice(['San Francisco', 'Boston', 'New York', 'Seattle', 'Austin'])}, USA",
-                'university': university,
-            }
-            
-            if user_role == 'student':
-                profile_data.update({
-                    'major': random.choice(majors),
-                    'graduation_year': random.randint(2024, 2028)
-                })
-            
-            profile, created = UserProfile.objects.get_or_create(
-                user=user,
-                defaults=profile_data
-            )
-            
-            new_users.append(user)
-        
+
+        # Disconnect email signal to avoid sending emails for generated users
+        from accounts.signals import send_welcome_and_verification_emails
+        post_save.disconnect(send_welcome_and_verification_emails, sender=User)
+
+        try:
+            for i in range(count):
+                first_name = random.choice(first_names)
+                last_name = random.choice(last_names)
+                username = f"{first_name.lower()}.{last_name.lower()}{random.randint(100, 999)}"
+
+                # Check if user already exists
+                if User.objects.filter(username=username).exists():
+                    continue
+
+                university = random.choice(universities)
+
+                user = User.objects.create_user(
+                    username=username,
+                    email=f"{username}@{university.email_domain}",
+                    first_name=first_name,
+                    last_name=last_name,
+                    password='password123'
+                )
+
+                # Create profile
+                user_role = random.choice(['student', 'professor', 'investor', 'mentor'])
+                profile_data = {
+                    'first_name': first_name,
+                    'last_name': last_name,
+                    'user_role': user_role,
+                    'bio': random.choice(bios),
+                    'location': f"{random.choice(['San Francisco', 'Boston', 'New York', 'Seattle', 'Austin'])}, USA",
+                    'university': university,
+                }
+
+                if user_role == 'student':
+                    profile_data.update({
+                        'major': random.choice(majors),
+                        'graduation_year': random.randint(2024, 2028)
+                    })
+                elif user_role == 'mentor':
+                    profile_data.update({
+                        'company': random.choice(['TechStars', 'Y Combinator', 'Sequoia Capital', 'a16z', 'Greylock Partners', 'Accel', 'Benchmark']),
+                        'investment_focus': random.choice(['AI/ML', 'Fintech', 'EdTech', 'HealthTech', 'SaaS', 'Climate Tech', 'Web3'])
+                    })
+
+                # Use update_or_create since post_save signal may have already created an empty profile
+                profile, created = UserProfile.objects.update_or_create(
+                    user=user,
+                    defaults=profile_data
+                )
+
+                new_users.append(user)
+        finally:
+            # Always reconnect the email signal
+            post_save.connect(send_welcome_and_verification_emails, sender=User)
+
         return new_users
 
     def _create_posts(self, users, count):

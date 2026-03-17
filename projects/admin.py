@@ -1,6 +1,6 @@
 from django.contrib import admin
 from django.utils import timezone
-from .models import Project, ProjectInvitation
+from .models import Project, ProjectInvitation, Category
 
 
 @admin.register(Project)
@@ -67,6 +67,15 @@ class ProjectAdmin(admin.ModelAdmin):
 
         self.message_user(request, f'{updated} project(s) rejected. Please add rejection reasons individually.')
     reject_projects.short_description = 'Reject selected projects'
+
+
+@admin.register(Category)
+class CategoryAdmin(admin.ModelAdmin):
+    list_display = ['name', 'slug', 'is_active', 'display_order', 'created_at']
+    list_editable = ['is_active', 'display_order']
+    prepopulated_fields = {'slug': ('name',)}
+    search_fields = ['name']
+    list_filter = ['is_active']
 
 
 @admin.register(ProjectInvitation)

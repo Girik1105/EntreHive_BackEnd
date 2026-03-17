@@ -260,6 +260,22 @@ class Project(models.Model):
         super().save(*args, **kwargs)
 
 
+class Category(models.Model):
+    """Admin-managed project category. Only admins can create/edit/delete."""
+    name = models.CharField(max_length=50, unique=True)
+    slug = models.SlugField(max_length=50, unique=True)
+    is_active = models.BooleanField(default=True)
+    display_order = models.IntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name_plural = "Categories"
+        ordering = ['display_order', 'name']
+
+    def __str__(self):
+        return self.name
+
+
 class ProjectInvitation(models.Model):
     """
     Model to handle project invitations
