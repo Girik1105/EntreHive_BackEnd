@@ -215,13 +215,13 @@ class CreateConversationSerializer(serializers.Serializer):
             logger.info("Same role messaging - ALLOWED")
             return data
 
-        # Allow professors/investors to message students
-        if from_role in ['professor', 'investor'] and to_role == 'student':
-            logger.info("Prof/Investor to student - ALLOWED")
+        # Allow professors/investors/mentors to message students
+        if from_role in ['professor', 'investor', 'mentor'] and to_role == 'student':
+            logger.info("Prof/Investor/Mentor to student - ALLOWED")
             return data
 
-        # For students messaging professors/investors, check if they have permission
-        if from_role == 'student' and to_role in ['professor', 'investor']:
+        # For students messaging professors/investors/mentors, check if they have permission
+        if from_role == 'student' and to_role in ['professor', 'investor', 'mentor']:
             # Check if there's an existing permission
             has_permission = MessagePermission.objects.filter(
                 from_user=request.user,
@@ -229,12 +229,12 @@ class CreateConversationSerializer(serializers.Serializer):
             ).exists()
 
             if not has_permission:
-                logger.warning("Student to prof/investor without permission - DENIED")
+                logger.warning("Student to prof/investor/mentor without permission - DENIED")
                 raise serializers.ValidationError(
                     "You don't have permission to message this user. "
-                    "Students must first send a project view request to professors/investors."
+                    "Students must first send a project view request to professors/investors/mentors."
                 )
-            logger.info("Student to prof/investor with permission - ALLOWED")
+            logger.info("Student to prof/investor/mentor with permission - ALLOWED")
 
         return data
     
@@ -318,9 +318,9 @@ class ProjectViewRequestSerializer(serializers.ModelSerializer):
         if not hasattr(recipient, 'profile'):
             raise serializers.ValidationError("Recipient must have a profile")
 
-        if recipient.profile.user_role not in ['professor', 'investor']:
+        if recipient.profile.user_role not in ['professor', 'investor', 'mentor']:
             raise serializers.ValidationError(
-                f"Can only send project view requests to professors or investors. "
+                f"Can only send project view requests to professors, investors, or mentors. "
                 f"Selected user '{recipient.username}' is a {recipient.profile.user_role}."
             )
 
@@ -565,12 +565,12 @@ class CreateGroupConversationSerializer(serializers.Serializer):
         request = self.context.get('request')
         project = Project.objects.get(id=data['project_id'])
 
-        # Check if user has permission (professor/investor)
+        # Check if user has permission (professor/investor/mentor)
         if not hasattr(request.user, 'profile'):
             raise serializers.ValidationError("User must have a profile")
 
-        if request.user.profile.user_role not in ['professor', 'investor']:
-            raise serializers.ValidationError("Only professors and investors can create group conversations")
+        if request.user.profile.user_role not in ['professor', 'investor', 'mentor']:
+            raise serializers.ValidationError("Only professors, investors, and mentors can create group conversations")
 
         # Check if group conversation already exists for this project by this user
         existing_group = GroupConversation.objects.filter(

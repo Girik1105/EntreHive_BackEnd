@@ -183,7 +183,7 @@ class UserProfileSerializer(serializers.ModelSerializer):
     
     def validate_user_role(self, value):
         """Validate user role"""
-        valid_roles = ['student', 'professor', 'investor']
+        valid_roles = ['student', 'professor', 'investor', 'mentor']
         if value not in valid_roles:
             raise serializers.ValidationError(f"Role must be one of: {', '.join(valid_roles)}")
         return value
@@ -319,8 +319,8 @@ class UserProfileCreateUpdateSerializer(serializers.ModelSerializer):
                     if not has_university():
                         raise serializers.ValidationError("University is required when department is specified")
 
-        elif user_role == 'investor':
-            # Investor validation - company is recommended but not required
+        elif user_role in ['investor', 'mentor']:
+            # Investor/mentor validation - company is recommended but not required
             pass
 
         return data
@@ -457,8 +457,8 @@ class ExtendedRegisterSerializer(CustomRegisterSerializer):
         university_id = data.get('university_id')
         verified_university = data.get('verified_university', False)
         
-        # Investors can bypass university verification
-        if user_role == 'investor':
+        # Investors and mentors can bypass university verification
+        if user_role in ['investor', 'mentor']:
             return data
         
         # For students and professors, university verification is required

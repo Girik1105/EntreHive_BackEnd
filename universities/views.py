@@ -170,13 +170,13 @@ def verify_email_domain(request):
             status=status.HTTP_400_BAD_REQUEST
         )
     
-    # Investors can bypass university verification
-    if user_role == 'investor':
+    # Investors and mentors can bypass university verification
+    if user_role in ['investor', 'mentor']:
         return Response({
             'verified': True,
             'university': None,
-            'message': 'Investors can register without university affiliation',
-            'bypass_reason': 'investor'
+            'message': 'Investors and mentors can register without university affiliation',
+            'bypass_reason': user_role
         })
     
     # Check if domain matches any university

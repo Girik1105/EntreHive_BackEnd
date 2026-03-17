@@ -15,6 +15,7 @@ class UserProfile(models.Model):
         ('student', 'Student'),
         ('professor', 'Professor'),
         ('investor', 'Investor'),
+        ('mentor', 'Mentor'),
     ]
     
     # One-to-one relationship with User
@@ -144,7 +145,7 @@ class UserProfile(models.Model):
                 'research_interests': self.research_interests,
                 'university': self.university.name if self.university else None
             }
-        elif self.user_role == 'investor':
+        elif self.user_role in ['investor', 'mentor']:
             return {
                 'investment_focus': self.investment_focus,
                 'company': self.company

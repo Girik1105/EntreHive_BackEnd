@@ -11,9 +11,9 @@ from .models import Project
 from .serializers import ProjectSerializer
 
 
-def is_investor(user):
-    """Check if user has investor role"""
-    return hasattr(user, 'profile') and user.profile.user_role == 'investor'
+def is_investor_or_mentor(user):
+    """Check if user has investor or mentor role"""
+    return hasattr(user, 'profile') and user.profile.user_role in ['investor', 'mentor']
 
 
 class InvestorProjectDetailView(generics.RetrieveAPIView):
@@ -32,8 +32,8 @@ class InvestorProjectDetailView(generics.RetrieveAPIView):
         """Restrict to approved public and university projects only"""
         user = self.request.user
 
-        # Only allow investors to use this endpoint
-        if not is_investor(user):
+        # Only allow investors and mentors to use this endpoint
+        if not is_investor_or_mentor(user):
             return Project.objects.none()
 
         # Investors can view:
@@ -94,17 +94,17 @@ class InvestorProjectDetailView(generics.RetrieveAPIView):
 @permission_classes([permissions.IsAuthenticated])
 def check_investor_access(request):
     """
-    Check if current user is an investor
+    Check if current user is an investor or mentor
     GET /api/projects/investor/check-access/
     """
-    if is_investor(request.user):
+    if is_investor_or_mentor(request.user):
         return Response({
             'is_investor': True,
             'message': 'Access granted'
         })
-    
+
     return Response({
         'is_investor': False,
-        'message': 'Access denied. This feature is only available to investors.'
+        'message': 'Access denied. This feature is only available to investors and mentors.'
     }, status=status.HTTP_403_FORBIDDEN)
 

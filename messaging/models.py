@@ -240,8 +240,8 @@ class ProjectViewRequest(models.Model):
         if not hasattr(self.recipient, 'profile'):
             raise ValidationError("Recipient must have a profile")
         
-        if self.recipient.profile.user_role not in ['professor', 'investor']:
-            raise ValidationError("Project view requests can only be sent to professors or investors")
+        if self.recipient.profile.user_role not in ['professor', 'investor', 'mentor']:
+            raise ValidationError("Project view requests can only be sent to professors, investors, or mentors")
         
         # Ensure requester is owner or team member of the project
         if not self.project.is_team_member(self.requester):
@@ -384,12 +384,12 @@ class MessagePermission(models.Model):
         if from_role == to_role:
             return True
 
-        # Rule 2: Professors and investors can message students
-        if from_role in ['professor', 'investor'] and to_role == 'student':
+        # Rule 2: Professors, investors, and mentors can message students
+        if from_role in ['professor', 'investor', 'mentor'] and to_role == 'student':
             return True
 
-        # Rule 3: Students can message professors/investors if they have permission
-        if from_role == 'student' and to_role in ['professor', 'investor']:
+        # Rule 3: Students can message professors/investors/mentors if they have permission
+        if from_role == 'student' and to_role in ['professor', 'investor', 'mentor']:
             # Check if there's an existing permission
             has_permission = MessagePermission.objects.filter(
                 from_user=from_user,

@@ -5,9 +5,9 @@ from rest_framework import status
 from accounts.models import UserProfile
 
 
-def is_investor(user):
-    """Check if user has investor role"""
-    return hasattr(user, 'profile') and user.profile.user_role == 'investor'
+def is_investor_or_mentor(user):
+    """Check if user has investor or mentor role"""
+    return hasattr(user, 'profile') and user.profile.user_role in ['investor', 'mentor']
 
 
 @api_view(['GET', 'PUT'])
@@ -27,10 +27,10 @@ def investor_interests(request):
         "interests": ["AI", "Fintech", "EdTech"]
     }
     """
-    # Check if user is investor
-    if not is_investor(request.user):
+    # Check if user is investor or mentor
+    if not is_investor_or_mentor(request.user):
         return Response(
-            {'error': 'Access denied. This feature is only available to investors.'},
+            {'error': 'Access denied. This feature is only available to investors and mentors.'},
             status=status.HTTP_403_FORBIDDEN
         )
     

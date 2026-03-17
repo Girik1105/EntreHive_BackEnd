@@ -70,9 +70,9 @@ class PublicProfileView(generics.RetrieveAPIView):
         return UserProfile.objects.filter(is_profile_public=True)
 
 
-def is_investor(user):
-    """Check if user has investor role"""
-    return hasattr(user, 'profile') and user.profile.user_role == 'investor'
+def is_investor_or_mentor(user):
+    """Check if user has investor or mentor role"""
+    return hasattr(user, 'profile') and user.profile.user_role in ['investor', 'mentor']
 
 
 class InvestorProfileView(generics.RetrieveAPIView):
@@ -89,16 +89,16 @@ class InvestorProfileView(generics.RetrieveAPIView):
     def get_queryset(self):
         user = self.request.user
         
-        # Only allow investors to use this endpoint
-        if not is_investor(user):
+        # Only allow investors and mentors to use this endpoint
+        if not is_investor_or_mentor(user):
             return UserProfile.objects.none()
-        
+
         # Return only public profiles for students and professors
-        # Exclude other investors from being viewed
+        # Exclude other investors and mentors from being viewed
         return UserProfile.objects.filter(
             is_profile_public=True
         ).exclude(
-            user_role='investor'
+            user_role__in=['investor', 'mentor']
         )
     
     def retrieve(self, request, *args, **kwargs):

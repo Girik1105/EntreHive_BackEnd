@@ -10,9 +10,9 @@ from projects.serializers import ProjectSerializer
 from posts.serializers import PostSerializer
 
 
-def is_investor(user):
-    """Check if user has investor role"""
-    return hasattr(user, 'profile') and user.profile.user_role == 'investor'
+def is_investor_or_mentor(user):
+    """Check if user has investor or mentor role"""
+    return hasattr(user, 'profile') and user.profile.user_role in ['investor', 'mentor']
 
 
 @api_view(['GET'])
@@ -34,10 +34,10 @@ def investor_feed(request):
     - page_size: Number of results per page (default: 15, max: 50)
     """
 
-    # Check if user is investor
-    if not is_investor(request.user):
+    # Check if user is investor or mentor
+    if not is_investor_or_mentor(request.user):
         return Response(
-            {'error': 'Access denied. This feature is only available to investors.'},
+            {'error': 'Access denied. This feature is only available to investors and mentors.'},
             status=status.HTTP_403_FORBIDDEN
         )
 
@@ -255,12 +255,12 @@ def investor_topics(request):
     Get available topics for filtering
     GET /api/feed/investor/topics/
     """
-    if not is_investor(request.user):
+    if not is_investor_or_mentor(request.user):
         return Response(
-            {'error': 'Access denied. This feature is only available to investors.'},
+            {'error': 'Access denied. This feature is only available to investors and mentors.'},
             status=status.HTTP_403_FORBIDDEN
         )
-    
+
     # Define available topics
     topics = [
         {'id': 'AI', 'label': 'AI', 'icon': '🤖'},
@@ -287,12 +287,12 @@ def investor_stats(request):
     Get investor-specific statistics
     GET /api/feed/investor/stats/
     """
-    if not is_investor(request.user):
+    if not is_investor_or_mentor(request.user):
         return Response(
-            {'error': 'Access denied. This feature is only available to investors.'},
+            {'error': 'Access denied. This feature is only available to investors and mentors.'},
             status=status.HTTP_403_FORBIDDEN
         )
-    
+
     # Get counts
     all_projects = Project.objects.filter(visibility__in=['public', 'university'])
     total_projects = all_projects.count()
