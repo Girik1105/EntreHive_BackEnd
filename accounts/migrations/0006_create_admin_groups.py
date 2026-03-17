@@ -122,12 +122,12 @@ class Migration(migrations.Migration):
 
     dependencies = [
         ('accounts', '0005_add_investor_interests'),
-        ('contact', '__latest__'),
-        ('projects', '__latest__'),
-        ('posts', '__latest__'),
-        ('messaging', '__latest__'),
-        ('notifications', '__latest__'),
-        ('universities', '__latest__'),
+        ('contact', '0001_initial'),
+        ('projects', '0006_project_approval_status_project_rejection_reason_and_more'),
+        ('posts', '0002_add_search_indexes'),
+        ('messaging', '0002_groupconversation_groupmessage'),
+        ('notifications', '0005_fix_profile_urls'),
+        ('universities', '0002_remove_university_allow_cross_university_collaboration_and_more'),
     ]
 
     operations = [
