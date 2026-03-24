@@ -212,18 +212,15 @@ AUTH_PASSWORD_VALIDATORS = [
 # REST framework configuration
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": (
-        'dj_rest_auth.jwt_auth.JWTCookieAuthentication',
+        'rest_framework_simplejwt.authentication.JWTAuthentication',
     ),
 }
 
 REST_AUTH = {
     'USE_JWT': True,
-    'JWT_AUTH_COOKIE': 'access',
-    'JWT_AUTH_REFRESH_COOKIE': 'refresh',
-    'JWT_AUTH_SECURE': True,
-    'JWT_AUTH_SAMESITE': 'None',  # Required for cross-origin cookie setting (Netlify → Heroku)
-    'JWT_AUTH_HTTPONLY': True,  # ✅ SECURITY FIX: Prevents XSS token theft
-    'JWT_AUTH_COOKIE_DOMAIN': os.environ.get('JWT_COOKIE_DOMAIN', None),
+    'JWT_AUTH_COOKIE': None,
+    'JWT_AUTH_REFRESH_COOKIE': None,
+    'JWT_AUTH_HTTPONLY': False,
     'JWT_AUTH_RETURN_EXPIRATION': True,
     'SESSION_LOGIN': False,
 
@@ -231,10 +228,10 @@ REST_AUTH = {
     'PASSWORD_RESET_USE_SITES_DOMAIN': False,
 
     'OLD_PASSWORD_FIELD_ENABLED': True,
-    
+
     # Custom serializer for registration
     'REGISTER_SERIALIZER': 'accounts.serializers.ExtendedRegisterSerializer',
-    
+
     # Custom serializer for password reset to use frontend URL
     'PASSWORD_RESET_SERIALIZER': 'accounts.serializers.CustomPasswordResetSerializer',
 }
